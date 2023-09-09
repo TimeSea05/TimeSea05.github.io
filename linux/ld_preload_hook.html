@@ -1,0 +1,351 @@
+
+<!DOCTYPE html>
+<html lang="en">
+
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#202020"/>
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  <script src="//busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js" async></script>
+  
+  
+    <meta name="keywords" content="Linux," />
+  
+
+  
+    <meta name="description" content="Use LD_PRELOAD to hook libc Library Functions" />
+  
+  
+  <link rel="icon" type="image/x-icon" href="/logo.png">
+  <title>Use LD_PRELOAD to hook libc Library Functions [ Blog ]</title>
+  
+    <!-- stylesheets list from config.yml -->
+    
+      <link rel="stylesheet" href="//cdn.bootcss.com/pure/1.0.0/pure-min.css">
+    
+      <link rel="stylesheet" href="/css/xoxo.css">
+    
+  
+<meta name="generator" content="Hexo 6.3.0"></head>
+
+
+<body>
+  <div class="nav-container">
+    <nav class="home-menu pure-menu pure-menu-horizontal">
+  <a class="pure-menu-heading" href="/">
+    <img class="avatar" src="https://timesea05.github.io/assets/logo.jpg">
+    <span class="title">Blog</span>
+  </a>
+
+  <ul class="pure-menu-list clearfix">
+      
+          
+            <li class="pure-menu-item"><a href="/" class="pure-menu-link">Home</a></li>
+          
+      
+          
+            <li class="pure-menu-item"><a href="/archives" class="pure-menu-link">Archives</a></li>
+          
+      
+          
+            <li class="pure-menu-item"><a href="/categories" class="pure-menu-link">Categories</a></li>
+          
+      
+          
+            <li class="pure-menu-item"><a href="/tags" class="pure-menu-link">Tags</a></li>
+          
+      
+          
+            <li class="pure-menu-item"><a href="/about" class="pure-menu-link">About</a></li>
+          
+      
+          
+            <li class="pure-menu-item"><a href="/atom.xml" class="pure-menu-link">RSS</a></li>
+          
+      
+  </ul>
+   
+</nav>
+  </div>
+
+  <div class="container" id="content-outer">
+    <div class="inner" id="content-inner">
+      <div class="post-container">
+  <article class="post" id="post">
+    <header class="post-header text-center">
+      <h1 class="title">
+        Use LD_PRELOAD to hook libc Library Functions
+      </h1>
+      <span>
+        
+        <time class="time" datetime="2023-07-12T00:00:00.000Z">
+        2023-07-12
+      </time>
+        
+      </span>
+      <span class="slash">/</span>
+      <span class="post-meta">
+      <span class="post-tags">
+        <ul class="article-tag-list" itemprop="keywords"><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/Linux/" rel="tag">Linux</a></li></ul>
+      </span>
+    </span>
+
+    </header>
+
+    <div class="post-content">
+      <p>南京大学蒋炎岩老师在<a target="_blank" rel="noopener" href="https://jyywiki.cn/OS/2023/build/lect22.ipynb">可执行文件和加载</a>中讲到可以使用环境变量<code>LD_PRELOAD</code>对libc的函数进行"override"。Linux Manual中对<code>LD_PRELOAD</code>的介绍如下：</p>
+<blockquote>
+<p>LD_PRELOAD</p>
+<p>A list of additional, user-specified, ELF shared objects to be loaded before all others. This feature can be used to selectively override functions in other shared objects.</p>
+<p>The items of the list can be separated by spaces or colons, and there is no support for escaping either separator. The objects are searched for using the rules given under DESCRIPTION. Objects are searched for and added to the link map in the left-to-right order specified in the list.</p>
+<p>In secure-execution mode, preload pathnames containing slashes are ignored. Furthermore, shared objects are preloaded only from the standard search directories and only if they have set-user-ID mode bit enabled (which is not typical).</p>
+<p>Within the names specified in the LD_PRELOAD list, the dynamic linker understands the tokens <code>$ORIGIN</code>, <code>$LIB</code>, and <code>$PLATFORM</code> (or the versions using curly braces around the names) as described above in Rpathtoken expansion. (See also the discussion of quoting under the description of LD_LIBRARY_PATH.)</p>
+<p>There are various methods of specifying libraries to be preloaded, and these are handled in the following order:</p>
+<ol type="1">
+<li><p>The LD_PRELOAD environment variable.</p></li>
+<li><p>The --preload command-line option when invoking the dynamic linker directly.</p></li>
+<li><p>The /etc/ld.so.preload file (described below).</p></li>
+</ol>
+</blockquote>
+<p>利用<code>LD_PRELOAD</code>这个环境变量，我们可以将一些我们感到不满意的库函数替换成我们自己实现的函数，或者是对库函数进行插装，来获取程序对库函数的调用信息。下面这个程序演示了如何对库函数进行插桩：</p>
+<p><em>malloc_override.c</em></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// By GPT-4</span></span><br><span class="line"></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> _GNU_SOURCE</span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;dlfcn.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;stdio.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;stdlib.h&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="type">void</span>* <span class="title function_">malloc</span><span class="params">(<span class="type">size_t</span> size)</span> &#123;</span><br><span class="line">  <span class="type">static</span> <span class="type">void</span>* (*real_malloc)(<span class="type">size_t</span>) = <span class="literal">NULL</span>;</span><br><span class="line">  <span class="keyword">if</span> (!real_malloc) &#123;</span><br><span class="line">    real_malloc = dlsym(RTLD_NEXT, <span class="string">&quot;malloc&quot;</span>);</span><br><span class="line">  &#125;</span><br><span class="line"></span><br><span class="line">  <span class="type">void</span>* ptr = real_malloc(size);</span><br><span class="line">  <span class="built_in">fprintf</span>(<span class="built_in">stderr</span>, <span class="string">&quot;malloc(%zu) = %p\n&quot;</span>, size, ptr);</span><br><span class="line">  <span class="keyword">return</span> ptr;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="type">void</span> <span class="title function_">free</span><span class="params">(<span class="type">void</span>* ptr)</span> &#123;</span><br><span class="line">  <span class="type">static</span> <span class="title function_">void</span> <span class="params">(*real_free)</span><span class="params">(<span class="type">void</span>*)</span> = <span class="literal">NULL</span>;</span><br><span class="line">  <span class="keyword">if</span> (!real_free) &#123;</span><br><span class="line">    real_free = dlsym(RTLD_NEXT, <span class="string">&quot;free&quot;</span>);</span><br><span class="line">  &#125;</span><br><span class="line"></span><br><span class="line">  <span class="built_in">fprintf</span>(<span class="built_in">stderr</span>, <span class="string">&quot;free(%p)\n&quot;</span>, ptr);</span><br><span class="line">  real_free(ptr);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>编译该程序为动态链接库：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">gcc -shared -fPIC -o malloc_override.so malloc_override.c -ldl</span><br></pre></td></tr></table></figure>
+<p>执行命令</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">LD_PRELOAD=./malloc_override.so <span class="built_in">ls</span></span><br></pre></td></tr></table></figure>
+<p>可以看到命令行的输出：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">malloc(0x563533a0a2d0)</span><br><span class="line">malloc(0x563533a0a4b0)</span><br><span class="line">malloc(0x563533a0a530)</span><br><span class="line">free(0x563533a0a4b0)</span><br><span class="line">free(0x563533a0a530)</span><br><span class="line">....</span><br><span class="line">a.out  compile.sh  malloc_override.c  malloc_override.so  prac  prac.c</span><br><span class="line">free(0x563533a14f40)</span><br><span class="line">free((nil))</span><br><span class="line">free(0x563533a14f10)</span><br></pre></td></tr></table></figure>
+<p>hooking实现的原理比较简单，我们使用<code>LD_PRELOAD</code>预先加载了我们自己编译的动态库，malloc和free这两个符号的地址就已经确定下来了，之后<code>/lib64/ld-linux-x86-64.so.2</code>加载libc时，libc中的malloc和free不会再覆盖之前我们已经确定的符号。此后ls程序调用malloc和free，就是调用我们自己的动态库中的malloc和free了。</p>
+<p>因为我们的目的是对malloc和free进行插桩，所以我们只是在上面做了一层包装，最终还是需要调用libc中的malloc和free，但是这该如何实现呢？使用函数指针即可。<code>real_malloc</code>和<code>real_free</code>指向的是libc中malloc和free的位置，这两个函数指针的地址是通过<code>dlsym</code>来获取的。需要注意的是，<code>dlsym</code>的参数中有一个是<code>RTLD_NEXT</code>，表示下一个符号的位置。因为我们使用<code>LD_PRELOAD</code>提前加载了我们的动态库，因此libc中的malloc和free在我们的动态库符号的下一级，也就是第二个符号。</p>
+<p>利用同样的方法，可以对其他的libc库函数进行插桩。</p>
+<p>在研究过程中，我发现一个比较有趣的问题，如果将<code>fprintf</code>的参数从<code>stderr</code>换成<code>stdout</code>之后，再使用相同的命令，会出现segmentation fault：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">❯ LD_PRELOAD=./malloc_override.so <span class="built_in">ls</span>                               </span><br><span class="line">[1]    6870 segmentation fault  LD_PRELOAD=./malloc_override.so <span class="built_in">ls</span> --color=<span class="built_in">tty</span></span><br></pre></td></tr></table></figure>
+<p>将<code>fprintf(stdout, ...)</code> 换成<code>printf</code> 之后也是同样的情况。我百思不得其解，我用了下面这样一个测试程序来测试动态库：</p>
+<p><em>prac.c</em></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;stdlib.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;stdio.h&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="type">int</span> <span class="title function_">main</span><span class="params">()</span> &#123;</span><br><span class="line">  <span class="type">int</span> *p = (<span class="type">int</span> *)<span class="built_in">malloc</span>(<span class="number">77</span>);</span><br><span class="line">  <span class="built_in">printf</span>(<span class="string">&quot;%p\n&quot;</span>, p);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>执行以下命令：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">❯ gcc prac.c</span><br><span class="line">❯ LD_PRELOAD=./malloc_override.so ./a.out</span><br><span class="line">malloc(77) = 0x5607b75222a0</span><br><span class="line">malloc(1024) = 0x5607b7522300</span><br><span class="line">0x5607b75222a0</span><br></pre></td></tr></table></figure>
+<p>我的程序中只出现了一次malloc，但是在hooking中却出现了两次malloc，那一定是<code>printf</code>这个函数调用了malloc。这也与我们的常识符合，stdout是有一个buffer的，每次的输出都会先输出到buffer中，等到出现换行符时，再将输入打印到终端。</p>
+<p>如果禁用stdout的buffer呢？会出现什么结果？修改后的<code>malloc_override.c</code>如下：</p>
+<p><em>malloc_override.c</em></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// ...</span></span><br><span class="line"><span class="type">void</span>* <span class="title function_">malloc</span><span class="params">(<span class="type">size_t</span> size)</span> &#123;</span><br><span class="line">  setbuf(<span class="built_in">stdout</span>, <span class="literal">NULL</span>);</span><br><span class="line">  <span class="keyword">if</span> (!real_malloc) &#123;</span><br><span class="line">    real_malloc = dlsym(RTLD_NEXT, <span class="string">&quot;malloc&quot;</span>);</span><br><span class="line">  &#125;</span><br><span class="line"></span><br><span class="line">  <span class="type">void</span>* ptr = real_malloc(size);</span><br><span class="line">  <span class="built_in">fprintf</span>(<span class="built_in">stdout</span>, <span class="string">&quot;malloc(%zu) = %p\n&quot;</span>, size, ptr);</span><br><span class="line">  <span class="keyword">return</span> ptr;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="type">void</span> <span class="title function_">free</span><span class="params">(<span class="type">void</span>* ptr)</span> &#123;</span><br><span class="line">  setbuf(<span class="built_in">stdout</span>, <span class="literal">NULL</span>);</span><br><span class="line">  <span class="keyword">if</span> (!real_free) &#123;</span><br><span class="line">    real_free = dlsym(RTLD_NEXT, <span class="string">&quot;free&quot;</span>);</span><br><span class="line">  &#125;</span><br><span class="line"></span><br><span class="line">  <span class="built_in">fprintf</span>(<span class="built_in">stdout</span>, <span class="string">&quot;free(%p)\n&quot;</span>, ptr);</span><br><span class="line">  real_free(ptr);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>再执行同样的命令，发现不再出现segmentation fault，可以正常运行。</p>
+<p>所以最终来看，是stdout buffer的问题。</p>
+<p>为了探究出现segmentation fault的原因，将<code>malloc_override.c</code>中<code>setbuf(stdout, NULL)</code>删除，并使用<code>fprintf(stderr, ...)</code>输出函数调用信息：</p>
+<p><em>malloc_override.c</em></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">//...</span></span><br><span class="line"><span class="type">void</span>* <span class="title function_">malloc</span><span class="params">(<span class="type">size_t</span> size)</span> &#123;</span><br><span class="line">  <span class="built_in">fprintf</span>(<span class="built_in">stderr</span>, <span class="string">&quot;call malloc(%ld)\n&quot;</span>, size);</span><br><span class="line">  <span class="keyword">if</span> (!real_malloc) &#123;</span><br><span class="line">    real_malloc = dlsym(RTLD_NEXT, <span class="string">&quot;malloc&quot;</span>);</span><br><span class="line">  &#125;</span><br><span class="line"></span><br><span class="line">  <span class="type">void</span>* ptr = real_malloc(size);</span><br><span class="line">  <span class="built_in">fprintf</span>(<span class="built_in">stdout</span>, <span class="string">&quot;malloc(%zu) = %p\n&quot;</span>, size, ptr);</span><br><span class="line"></span><br><span class="line">  <span class="keyword">return</span> ptr;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="type">void</span> <span class="title function_">free</span><span class="params">(<span class="type">void</span>* ptr)</span> &#123;</span><br><span class="line">  <span class="built_in">fprintf</span>(<span class="built_in">stderr</span>, <span class="string">&quot;call free(%p)\n&quot;</span>, ptr);</span><br><span class="line">  <span class="keyword">if</span> (!real_free) &#123;</span><br><span class="line">    real_free = dlsym(RTLD_NEXT, <span class="string">&quot;free&quot;</span>);</span><br><span class="line">  &#125;</span><br><span class="line"></span><br><span class="line">  <span class="built_in">fprintf</span>(<span class="built_in">stdout</span>, <span class="string">&quot;free(%p)\n&quot;</span>, ptr);</span><br><span class="line">  real_free(ptr);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>编译动态库之后重新执行命令：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">❯ gcc -shared -fPIC -g -o malloc_override.so malloc_override.c -ldl</span><br><span class="line">❯ gcc prac.c</span><br><span class="line">❯ LD_PRELOAD=./malloc_override.so ./a.out</span><br></pre></td></tr></table></figure>
+<p>命令行输出如下：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">call malloc(77)</span><br><span class="line">call malloc(1024)</span><br><span class="line">call malloc(1024)</span><br><span class="line">call malloc(1024)</span><br><span class="line">...</span><br><span class="line">call malloc(1024)</span><br><span class="line">call malloc(1024)</span><br><span class="line">call malloc(1024)</span><br><span class="line">[1]    7034 segmentation fault  LD_PRELOAD=./malloc_override.so ./a.out</span><br></pre></td></tr></table></figure>
+<p>能看出是stack overflow导致segmentation fault，那么即可推断原因：使用<code>fprintf</code>或者<code>printf</code>向 stdout输出内容时调用malloc申请buffer，此后malloc又再次调用 fprintf 向stdout输出内容，循环递归导致stack overflow，最终segmentation fault。</p>
+<p>但是将libc替换为musl，重新编译<em>prac.c</em>，程序却能够正常运行：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">❯ musl-gcc prac.c</span><br><span class="line">❯ LD_PRELOAD=./malloc_override.so ./a.out</span><br><span class="line">call malloc(64)</span><br><span class="line">malloc(64) = 0x7f90a75e38f0</span><br><span class="line">0x7f90a75e38f0</span><br></pre></td></tr></table></figure>
+<p>查看musl的内部实现：</p>
+<p><em>stdio.h</em></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">define</span> stdout (&amp;__stdout_FILE)</span></span><br></pre></td></tr></table></figure>
+<p><em>stdout.c</em></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">static</span> <span class="type">unsigned</span> <span class="type">char</span> buf[BUFSIZ+UNGET];</span><br><span class="line">hidden FILE __stdout_FILE = &#123;</span><br><span class="line">	.buf = buf+UNGET,</span><br><span class="line">	.buf_size = <span class="keyword">sizeof</span> buf-UNGET,</span><br><span class="line">	.fd = <span class="number">1</span>,</span><br><span class="line">	.flags = F_PERM | F_NORD,</span><br><span class="line">	.lbf = <span class="string">&#x27;\n&#x27;</span>,</span><br><span class="line">	.write = __stdout_write,</span><br><span class="line">	.seek = __stdio_seek,</span><br><span class="line">	.close = __stdio_close,</span><br><span class="line">	.lock = <span class="number">-1</span>,</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+<p>可以看到，在musl中，stdout的buffer是在静态数据区，调用<code>printf</code>或者<code>fprintf(stdout, ...)</code>时不会调用malloc，因此也不会出现上述stack overflow的情况。</p>
+
+    </div>
+
+  </article>
+  <div class="toc-container">
+    
+
+  </div>
+</div>
+<div class="copyright">
+    <span>本作品采用</span>
+    <a target="_blank" rel="noopener" href="https://creativecommons.org/licenses/by/4.0/">知识共享署名 4.0 国际许可协议</a>
+    <span>进行许可。 转载时请注明原文链接。</span>
+</div>
+  
+    <div class="post-nav">
+      <div class="post-nav-item post-nav-next">
+        
+          <span>〈 </span>
+          <a href="/mit-6.824/linearizable-semetics.html" rel="next" title="Implement Linearizable Semantics in Raft">
+          Implement Linearizable Semantics in Raft
+          </a>
+        
+      </div>
+  
+      <div class="post-nav-item post-nav-prev">
+          
+          <a href="/golang/go-struct-data-layout.html" rel="prev" title="Data Layout of Go Struct">
+            Data Layout of Go Struct
+          </a>
+          <span>〉</span>
+        
+      </div>
+    </div>
+  
+
+
+    </div>
+
+    
+
+  </div>
+  <footer class="footer text-center">
+    <div id="bottom-inner">
+        <a class="bottom-item" href="https://timesea05.github.io">首页</a> |
+        <a class="bottom-item" href="https://timesea05.github.io" target="_blank">主站</a> |
+        <a class="bottom-item" href="https://github.com/TimeSea05" target="_blank">GitHub</a> |
+        <a class="bottom-item" href="https://hexo.io" target="_blank">Powered by hexo</a> |
+        <a class="bottom-item" href="https://github.com/KevinOfNeu/hexo-theme-xoxo" target="_blank">Theme xoxo</a>
+    </div>
+</footer>
+  
+
+<script>
+  (function(window, document, undefined) {
+
+    var timer = null;
+
+    function returnTop() {
+      cancelAnimationFrame(timer);
+      timer = requestAnimationFrame(function fn() {
+        var oTop = document.body.scrollTop || document.documentElement.scrollTop;
+        if (oTop > 0) {
+          document.body.scrollTop = document.documentElement.scrollTop = oTop - 50;
+          timer = requestAnimationFrame(fn);
+        } else {
+          cancelAnimationFrame(timer);
+        }
+      });
+    }
+
+    var hearts = [];
+    window.requestAnimationFrame = (function() {
+      return window.requestAnimationFrame ||
+        window.webkitRequestAnimationFrame ||
+        window.mozRequestAnimationFrame ||
+        window.oRequestAnimationFrame ||
+        window.msRequestAnimationFrame ||
+        function(callback) {
+          setTimeout(callback, 1000 / 60);
+        }
+    })();
+    init();
+
+    function init() {
+      css(".heart{z-index:9999;width: 10px;height: 10px;position: fixed;background: #f00;transform: rotate(45deg);-webkit-transform: rotate(45deg);-moz-transform: rotate(45deg);}.heart:after,.heart:before{content: '';width: inherit;height: inherit;background: inherit;border-radius: 50%;-webkit-border-radius: 50%;-moz-border-radius: 50%;position: absolute;}.heart:after{top: -5px;}.heart:before{left: -5px;}");
+      attachEvent();
+      gameloop();
+      addMenuEvent();
+    }
+
+    function gameloop() {
+      for (var i = 0; i < hearts.length; i++) {
+        if (hearts[i].alpha <= 0) {
+          document.body.removeChild(hearts[i].el);
+          hearts.splice(i, 1);
+          continue;
+        }
+        hearts[i].y--;
+        hearts[i].scale += 0.004;
+        hearts[i].alpha -= 0.013;
+        hearts[i].el.style.cssText = "left:" + hearts[i].x + "px;top:" + hearts[i].y + "px;opacity:" + hearts[i].alpha + ";transform:scale(" + hearts[i].scale + "," + hearts[i].scale + ") rotate(45deg);background:" + hearts[i].color;
+      }
+      requestAnimationFrame(gameloop);
+    }
+
+    /**
+     * 给logo设置点击事件
+     * 
+     * - 回到顶部
+     * - 出现爱心
+     */
+    function attachEvent() {
+      var old = typeof window.onclick === "function" && window.onclick;
+      var logo = document.getElementById("logo");
+      if (logo) {
+        logo.onclick = function(event) {
+          returnTop();
+          old && old();
+          createHeart(event);
+        }
+      }
+      
+    }
+
+    function createHeart(event) {
+      var d = document.createElement("div");
+      d.className = "heart";
+      hearts.push({
+        el: d,
+        x: event.clientX - 5,
+        y: event.clientY - 5,
+        scale: 1,
+        alpha: 1,
+        color: randomColor()
+      });
+      document.body.appendChild(d);
+    }
+
+    function css(css) {
+      var style = document.createElement("style");
+      style.type = "text/css";
+      try {
+        style.appendChild(document.createTextNode(css));
+      } catch (ex) {
+        style.styleSheet.cssText = css;
+      }
+      document.getElementsByTagName('head')[0].appendChild(style);
+    }
+
+    function randomColor() {
+      // return "rgb(" + (~~(Math.random() * 255)) + "," + (~~(Math.random() * 255)) + "," + (~~(Math.random() * 255)) + ")";
+      return "#F44336";
+    }
+
+    function addMenuEvent() {
+      var menu = document.getElementById('menu-main-post');
+      if (menu) {
+        var toc = document.getElementById('toc');
+        if (toc) {
+          menu.onclick = function() {
+            if (toc) {
+              if (toc.style.display == 'block') {
+                toc.style.display = 'none';
+              } else {
+                toc.style.display = 'block';
+              }
+            }
+          };
+        } else {
+          menu.style.display = 'none';
+        }
+      }
+    }
+
+  })(window, document);
+</script>
+
+  
+
+
+
+<script type="text/x-mathjax-config">
+    MathJax.Hub.Config({
+        tex2jax: {
+            inlineMath: [ ["$","$"], ["\\(","\\)"] ],
+            skipTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+            processEscapes: true
+        }
+    });
+    MathJax.Hub.Queue(function() {
+        var all = MathJax.Hub.getAllJax();
+        for (var i = 0; i < all.length; ++i)
+            all[i].SourceElement().parentNode.className += ' has-jax';
+    });
+</script>
+<script src="http://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+</body>
+</html>

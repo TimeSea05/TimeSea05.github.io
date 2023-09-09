@@ -1,0 +1,436 @@
+
+<!DOCTYPE html>
+<html lang="en">
+
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#202020"/>
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  <script src="//busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js" async></script>
+  
+  
+    <meta name="keywords" content="Others," />
+  
+
+  
+    <meta name="description" content="UCAS OSLab Guide: Setting up the Development Environment" />
+  
+  
+  <link rel="icon" type="image/x-icon" href="/logo.png">
+  <title>UCAS OSLab Guide: Setting up the Development Environment [ Blog ]</title>
+  
+    <!-- stylesheets list from config.yml -->
+    
+      <link rel="stylesheet" href="//cdn.bootcss.com/pure/1.0.0/pure-min.css">
+    
+      <link rel="stylesheet" href="/css/xoxo.css">
+    
+  
+<meta name="generator" content="Hexo 6.3.0"></head>
+
+
+<body>
+  <div class="nav-container">
+    <nav class="home-menu pure-menu pure-menu-horizontal">
+  <a class="pure-menu-heading" href="/">
+    <img class="avatar" src="https://timesea05.github.io/assets/logo.jpg">
+    <span class="title">Blog</span>
+  </a>
+
+  <ul class="pure-menu-list clearfix">
+      
+          
+            <li class="pure-menu-item"><a href="/" class="pure-menu-link">Home</a></li>
+          
+      
+          
+            <li class="pure-menu-item"><a href="/archives" class="pure-menu-link">Archives</a></li>
+          
+      
+          
+            <li class="pure-menu-item"><a href="/categories" class="pure-menu-link">Categories</a></li>
+          
+      
+          
+            <li class="pure-menu-item"><a href="/tags" class="pure-menu-link">Tags</a></li>
+          
+      
+          
+            <li class="pure-menu-item"><a href="/about" class="pure-menu-link">About</a></li>
+          
+      
+          
+            <li class="pure-menu-item"><a href="/atom.xml" class="pure-menu-link">RSS</a></li>
+          
+      
+  </ul>
+   
+</nav>
+  </div>
+
+  <div class="container" id="content-outer">
+    <div class="inner" id="content-inner">
+      <div class="post-container">
+  <article class="post" id="post">
+    <header class="post-header text-center">
+      <h1 class="title">
+        UCAS OSLab Guide: Setting up the Development Environment
+      </h1>
+      <span>
+        
+        <time class="time" datetime="2023-08-31T00:00:00.000Z">
+        2023-08-31
+      </time>
+        
+      </span>
+      <span class="slash">/</span>
+      <span class="post-meta">
+      <span class="post-tags">
+        <ul class="article-tag-list" itemprop="keywords"><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/Others/" rel="tag">Others</a></li></ul>
+      </span>
+    </span>
+
+    </header>
+
+    <div class="post-content">
+      <p>操作系统研讨课可以说是国科大计算机系最硬核的几门课之一了，选修这门课的同学需要从0开始构建自己的操作系统内核，无论是从设计还是调试角度，难度都是相当大。当然，从硬核的课程中，自然也能学到非常多硬核的知识，修完这门课，个人的编程能力、系统能力都会有相当大的提升。</p>
+<p>我是在2022年秋季选修的这门课，当时老师给的开发环境是RISC-V工具链，调试环境为课题组魔改的qemu+gdb. 使用gdb命令行来调试内核虽然可行，但是仍然显得比较繁琐，而且可视化程度比较低。唯一可用的可视化工具<code>tui</code>，在教学团队提供的gdb中也被禁用了，所以不得不想一些其他的办法来降低调试难度，从而提高开发效率。</p>
+<p>我自己是非常熟悉vscode这个编辑器的，所以当时在写代码之前，我就把开发环境搭建好了，之后写代码、调试，效率都非常高，正所谓“磨刀不误砍柴工”。因为大三上课业任务非常繁重，我只把我的这些办法传授给了身边的几个同学，效果还是非常明显的，他们的开发效率也得到了大幅度的提升。在保研结束后，时间相对来说比较充裕，我跟这门课的主讲老师蒋老师交流了这个想法，蒋老师表示非常赞成，并且在课堂上会把我的方法分享给学弟学妹，所以也就有了这篇文章。</p>
+<h2 id="准备">1. 准备</h2>
+<p>这门课的教学团队会给每一个人一个Ubuntu虚拟机，这个虚拟机是没有图形界面的，但是对外暴露了ssh端口，同学们应该都是通过ssh远程连接到虚拟机，然后进行开发。我想几乎所有同学都会选择vscode作为编辑器，所以我在这里推荐几款插件，来提高同学们的开发效率：</p>
+<ul>
+<li><p>C/C++</p>
+<p>微软官方的C/C++插件，提供调试、代码补全、错误提示等功能。</p>
+<p>个人感觉微软官方的这个插件，除了调试之外的功能，都不算太好用。比如错误提示经常会抽风，写着写着分号忘记了，有时候这个插件也不会提示，最后编译的时候报错才开始找自己是哪里哪里写错了，非常费劲。代码检查能力也不太行，很多写的不好的地方也不会及时给出警告。</p></li>
+<li><p>Clangd</p>
+<p>这个插件可以提供代码补全、代码检查、错误提示等功能，性能和使用体验远远超过微软官方插件。首先这个插件的响应速度非常快，其次对代码有着更严格的检查，能让你写出更规范的代码。</p></li>
+</ul>
+<p>上面这两个插件已经完全够用，我再根据我自己的使用习惯推荐几款插件：</p>
+<ul>
+<li><p>Tabout</p>
+<p>这个插件功能非常简单，只要使用tab键就能跳出右括号、右引号等，就不需要去按方向键一点一点的移动了。对我个人来说是非常方便。</p></li>
+<li><p>MetaJump</p>
+<p>这个插件可以在几次按键内让你的光标跳转到编辑器当前页面的任何位置，类似于vim。我个人不熟悉vim，此处就不在各位同学面前班门弄斧了。</p></li>
+</ul>
+<p>如果同学们想要使用clangd这个插件，那么需要首先在虚拟机中安装clangd：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo apt-get install clangd</span><br></pre></td></tr></table></figure>
+<p>在安装clangd和clangd插件之后，vscode会提示clangd插件的代码提示功能与C/C++插件的代码提示功能冲突，这时候可以选择关闭C/C++插件的代码提示功能，之后clangd就能够正常工作了。</p>
+<h2 id="配置">2. 配置</h2>
+<p>通常来说，用vscode打开项目所在的文件夹，会看到非常多红色和黄色的波浪线。这是因为提供代码检查功能的插件无法识别变量名、类型名等词法符号。下面的内容将要介绍如何配置vscode，让插件正确解析在头文件中声明的变量、类型或者函数等，这样会方便我们跳转到词法符号对应的定义或者声明处，从而更快地上手项目。</p>
+<p>正确解析这些符号依赖的是编译数据库<code>compile_commands.json</code>。如果项目是用CMake构建的，那么只需要在使用CMake构建项目时，添加选项<code>-DCMAKE_EXPORT_COMPILE_COMMANDS=ON</code>即可。但是我们的OSLab并不是使用CMake构建的，而是用的Makefile，那么该如何导出compile_commands.json呢？其实也比较简单，这会用到一个小工具，叫<code>bear</code>。</p>
+<p>首先需要安装<code>bear</code>:</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo apt-get install bear</span><br></pre></td></tr></table></figure>
+<p>在使用<code>bear</code>之前，首先使用<code>make clean</code>清空此前已经编译好的文件，此后执行命令</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">bear make all</span><br></pre></td></tr></table></figure>
+<p>执行完成之后，就可以在当前目录中看到<code>compile_commands.json</code>这个文件了，该文件的内容大概如下：</p>
+<p><em>compile_commands.json</em></p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">[</span></span><br><span class="line">    <span class="punctuation">&#123;</span></span><br><span class="line">        <span class="attr">&quot;arguments&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span></span><br><span class="line">            <span class="string">&quot;riscv64-unknown-linux-gnu-gcc&quot;</span><span class="punctuation">,</span></span><br><span class="line">            <span class="string">&quot;-c&quot;</span><span class="punctuation">,</span></span><br><span class="line">            <span class="string">&quot;-O0&quot;</span><span class="punctuation">,</span></span><br><span class="line">            <span class="string">&quot;-fno-builtin&quot;</span><span class="punctuation">,</span></span><br><span class="line">            <span class="string">&quot;-nostdlib&quot;</span><span class="punctuation">,</span></span><br><span class="line">            <span class="string">&quot;-nostdinc&quot;</span><span class="punctuation">,</span></span><br><span class="line">            <span class="string">&quot;-Wall&quot;</span><span class="punctuation">,</span></span><br><span class="line">            <span class="string">&quot;-mcmodel=medany&quot;</span><span class="punctuation">,</span></span><br><span class="line">            <span class="string">&quot;-ggdb3&quot;</span><span class="punctuation">,</span></span><br><span class="line">            <span class="string">&quot;-gdwarf-2&quot;</span><span class="punctuation">,</span></span><br><span class="line">            <span class="string">&quot;-g3&quot;</span><span class="punctuation">,</span></span><br><span class="line">            <span class="string">&quot;-I./tiny_libc/include&quot;</span><span class="punctuation">,</span></span><br><span class="line">            <span class="string">&quot;-o&quot;</span><span class="punctuation">,</span></span><br><span class="line">            <span class="string">&quot;build/time.o&quot;</span><span class="punctuation">,</span></span><br><span class="line">            <span class="string">&quot;tiny_libc/time.c&quot;</span></span><br><span class="line">        <span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">        <span class="attr">&quot;directory&quot;</span><span class="punctuation">:</span> <span class="string">&quot;/home/stu/anwentao20/Project6_File_System&quot;</span><span class="punctuation">,</span></span><br><span class="line">        <span class="attr">&quot;file&quot;</span><span class="punctuation">:</span> <span class="string">&quot;tiny_libc/time.c&quot;</span></span><br><span class="line">    <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">    ...</span><br><span class="line"><span class="punctuation">]</span></span><br></pre></td></tr></table></figure>
+<p>实质上就是描述了该文件是如何编译的，所以可以称它为“编译数据库”。</p>
+<p>在得到该文件之后，Clangd会检测到该文件，并询问是否设置相关选项，这边可以设置，之后就不要再更改<code>compile_commands.json</code>文件的位置了。我个人通常倾向于将该文件放到<code>.vscode</code>文件夹里。</p>
+<p><strong>如果你使用的是Clangd插件</strong>，那么配置编译数据库非常简单，只需要设置Clangd插件的选项。在已经安装的插件列表里面找到Clangd插件之后，右击右边的小齿轮，转到<code>Extension Settings</code>，找到<code>Arguments</code>选项，添加一项<code>--compile-commands-dir=$&#123;workspaceFolder&#125;/.vscode</code>即可。</p>
+<p>关于Clangd的Arguments，大家可以根据官方文档或者网上的其他博客来设置。我建议同学们再添加一个选项<code>--header-insertion=never</code>，如果不添加这个选项，那么Clangd就会为你提示一些C标准库中的函数或者变量，但是注意我们的内核项目是无法使用C标准库的，因此这样会对开发造成一些障碍。</p>
+<p>Clangd目前似乎还不支持Headerfile Completion，有兴趣的同学可以到Clangd的issue下面寻找相关答案，因为我个人用Clangd的时间还不是太长，有些东西还不太熟悉。目前可能的解决方案是<a target="_blank" rel="noopener" href="https://github.com/xavierd/clang_complete/issues/550">这个</a>。如果有同学弄明白了Clangd的这些机制，欢迎来找我交流，我会及时更新我的博客。</p>
+<p>在正确配置Clangd之后，你会在<code>.vscode</code>文件夹下面发现<code>.clangd</code>文件夹，这里面存放的都是索引文件。</p>
+<p><strong>如果你不使用Clangd插件</strong>，其实也是可以的（我去年就是这么干的），这样配置C/C++插件起来会稍微麻烦一些。首先在开发目录下创建<code>.vscode</code>文件夹，之后创建<code>c_cpp_properties.json</code>文件，该文件内容如下：</p>
+<p><em>c_cpp_properties.json</em></p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;configurations&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span></span><br><span class="line">        <span class="punctuation">&#123;</span></span><br><span class="line">            <span class="attr">&quot;name&quot;</span><span class="punctuation">:</span> <span class="string">&quot;Linux&quot;</span><span class="punctuation">,</span></span><br><span class="line">            <span class="attr">&quot;includePath&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span></span><br><span class="line">                <span class="string">&quot;$&#123;workspaceFolder&#125;/**&quot;</span></span><br><span class="line">            <span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">            <span class="attr">&quot;defines&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">            <span class="attr">&quot;compilerPath&quot;</span><span class="punctuation">:</span> <span class="string">&quot;/opt/riscv64-linux/bin/riscv64-unknown-linux-gnu-gcc&quot;</span><span class="punctuation">,</span></span><br><span class="line">            <span class="attr">&quot;cStandard&quot;</span><span class="punctuation">:</span> <span class="string">&quot;gnu17&quot;</span><span class="punctuation">,</span></span><br><span class="line">            <span class="attr">&quot;cppStandard&quot;</span><span class="punctuation">:</span> <span class="string">&quot;gnu++14&quot;</span><span class="punctuation">,</span></span><br><span class="line">            <span class="attr">&quot;intelliSenseMode&quot;</span><span class="punctuation">:</span> <span class="string">&quot;linux-gcc-x64&quot;</span><span class="punctuation">,</span></span><br><span class="line">            <span class="attr">&quot;compileCommands&quot;</span><span class="punctuation">:</span> <span class="string">&quot;$&#123;workspaceFolder&#125;/.vscode/compile_commands.json&quot;</span></span><br><span class="line">        <span class="punctuation">&#125;</span></span><br><span class="line">    <span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;version&quot;</span><span class="punctuation">:</span> <span class="number">4</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+<p>这样同样能够实现正确的代码检查和跳转，前提是<code>compile_commands.json</code>文件的位置在<code>.vscode</code>目录下。</p>
+<p>虽然我上面提到的这几个json配置文件看起来都非常复杂，但其实还是有迹可循的，从每一个选项的名字，你就能大概猜出来这个选项是什么意思，如果你要修改改选项的话，可以参考微软的官方文档来进行修改。</p>
+<p>比如上面<code>c_cpp_properties.json</code>文件中的<code>"compile_commands"</code>选项，很容易猜出这个选项是用来指定编译数据库的所在位置的。<code>$&#123;workspaceFolder&#125;</code>表示当前vscode打开的文件夹的路径。</p>
+<h2 id="调试">3. 调试</h2>
+<p>单纯的使用gdb命令行调试效率相对来说比较低，特别是调试文件数量巨大的项目时。我们可以使用C/C++插件来实现调试可视化，从而大幅度提高开发效率。</p>
+<h3 id="配置launch.json">3.1 配置launch.json</h3>
+<p><code>launch.json</code>是项目运行的配置文件，使用vscode运行或者调试项目，就必须配置好该文件。</p>
+<p>首先在<code>.vscode</code>文件夹里创建空白的<code>launch.json</code>文件。打开该文件，会看到编辑器右下方出现了<code>Add Configuration</code>字样的蓝色按钮。单击后，选择"C/C++: (gdb) Launch"，vscode就会在<code>launch.json</code>填充默认的配置，内容如下：</p>
+<p><em>launch.json</em></p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;configurations&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span></span><br><span class="line">  <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;name&quot;</span><span class="punctuation">:</span> <span class="string">&quot;(gdb) Launch&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;cppdbg&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;request&quot;</span><span class="punctuation">:</span> <span class="string">&quot;launch&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;program&quot;</span><span class="punctuation">:</span> <span class="string">&quot;enter program name, for example $&#123;workspaceFolder&#125;/a.out&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;args&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;stopAtEntry&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">false</span></span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;cwd&quot;</span><span class="punctuation">:</span> <span class="string">&quot;$&#123;fileDirname&#125;&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;environment&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;externalConsole&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">false</span></span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;MIMode&quot;</span><span class="punctuation">:</span> <span class="string">&quot;gdb&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;setupCommands&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span></span><br><span class="line">        <span class="punctuation">&#123;</span></span><br><span class="line">            <span class="attr">&quot;description&quot;</span><span class="punctuation">:</span> <span class="string">&quot;Enable pretty-printing for gdb&quot;</span><span class="punctuation">,</span></span><br><span class="line">            <span class="attr">&quot;text&quot;</span><span class="punctuation">:</span> <span class="string">&quot;-enable-pretty-printing&quot;</span><span class="punctuation">,</span></span><br><span class="line">            <span class="attr">&quot;ignoreFailures&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">true</span></span></span><br><span class="line">        <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">        <span class="punctuation">&#123;</span></span><br><span class="line">            <span class="attr">&quot;description&quot;</span><span class="punctuation">:</span> <span class="string">&quot;Set Disassembly Flavor to Intel&quot;</span><span class="punctuation">,</span></span><br><span class="line">            <span class="attr">&quot;text&quot;</span><span class="punctuation">:</span> <span class="string">&quot;-gdb-set disassembly-flavor intel&quot;</span><span class="punctuation">,</span></span><br><span class="line">            <span class="attr">&quot;ignoreFailures&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">true</span></span></span><br><span class="line">        <span class="punctuation">&#125;</span></span><br><span class="line">    <span class="punctuation">]</span></span><br><span class="line">  <span class="punctuation">&#125;</span></span><br><span class="line">  <span class="punctuation">]</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+<p>关于配置的各个字段，在vscode官方文档中都有详细的介绍，这里我只介绍比较重要的几个字段：</p>
+<ul>
+<li><p><code>program</code>：你要调试的可执行文件。通常情况下，我们都需要调试内核，所以这个地方填写编译出来的内核可执行文件的路径即可，比如我的路径为<code>"$&#123;workspaceFolder&#125;/build/main"</code></p></li>
+<li><code>stopAtEntry</code>：如果设置为true，那么程序会在<code>main</code>函数执行前暂停</li>
+<li><code>cwd</code>：current working directory，当前工作目录。这个就相当于你在bash中启动程序，当前bash所在的目录。如果<code>cwd</code>这个选项出了问题，那么可能程序在运行时执行的某些代码就会报错，比如在当前目录打开文件等操作。</li>
+<li><code>environment</code>：传给可执行程序的环境变量</li>
+<li><p><code>args</code>：传给可执行程序的命令行参数</p></li>
+</ul>
+<p>我们这次的开发环境相对来说比较特殊，用到了qemu提供的调试功能，所以需要加一些远程调试的选项。下面是我个人的<code>launch.json</code>的部分内容：</p>
+<p><em>launch.json</em></p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;version&quot;</span><span class="punctuation">:</span> <span class="string">&quot;0.2.0&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;configurations&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span></span><br><span class="line">    <span class="punctuation">&#123;</span></span><br><span class="line">      <span class="attr">&quot;name&quot;</span><span class="punctuation">:</span> <span class="string">&quot;Kernel Debug&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;cppdbg&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;request&quot;</span><span class="punctuation">:</span> <span class="string">&quot;launch&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;program&quot;</span><span class="punctuation">:</span> <span class="string">&quot;$&#123;workspaceFolder&#125;/build/main&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;stopAtEntry&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">true</span></span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;cwd&quot;</span><span class="punctuation">:</span> <span class="string">&quot;$&#123;workspaceFolder&#125;&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;miDebuggerServerAddress&quot;</span><span class="punctuation">:</span> <span class="string">&quot;127.0.0.1:1234&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;miDebuggerPath&quot;</span><span class="punctuation">:</span> <span class="string">&quot;/opt/riscv64-linux/bin/riscv64-unknown-linux-gnu-gdb&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;MIMode&quot;</span><span class="punctuation">:</span> <span class="string">&quot;gdb&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;postRemoteConnectCommands&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span></span><br><span class="line">        <span class="punctuation">&#123;</span><span class="attr">&quot;text&quot;</span><span class="punctuation">:</span> <span class="string">&quot;source $&#123;workspaceFolder&#125;/.gdbinit&quot;</span><span class="punctuation">&#125;</span></span><br><span class="line">      <span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;preLaunchTask&quot;</span><span class="punctuation">:</span> <span class="string">&quot;Rebuild kernel&quot;</span></span><br><span class="line">    <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">    ...</span><br><span class="line">  <span class="punctuation">]</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+<p>其中<code>miDebuggerServerAddress</code>就是qemu暴露的端口地址，教学团队提供的是<code>127.0.0.1:1234</code>；<code>miDebuggerPath</code>就是gdb所在的路径。</p>
+<p>关于<code>postRemoteConnectCommands</code>和<code>preLaunchTask</code>这两个字段，之后再进行解释。</p>
+<p>在配置好<code>launch.json</code>之后，单击vscode的调试按钮，或者按F5(在未关闭功能键的笔记本电脑上，需要按Fn+F5)直接开启调试了，在调试的时候，可以在行号左边单击设置断点，程序在运行时就可以停在断点处，此时就可以查看程序的运行状态，如局部变量、全局变量、寄存器状态等。</p>
+<h3 id="配置tasks.json">3.2 配置tasks.json</h3>
+<p>在调试的时候，我们通常会有这样的一种需求：调试发现问题之后，修改源代码，然后再进行调试。在第二次调试之前必须要重新编译，否则调试功能无法正常使用。这个时候你就要打开终端，输入<code>make all</code>，等待程序重新编译，再切换到vscode，开启调试，会显得非常繁琐。</p>
+<p>南京大学的蒋炎岩老师在他的操作系统课上讲到过一句话，我印象非常深，大概意思就是<strong>任何繁琐且机械的操作，我们都可以交给程序来做</strong>。这里同样也是如此，在调试之前总要重新进行编译，这个过程就可以交给程序来做，而<code>preLaunchTask</code>这个字段就是用来解决这个问题的。</p>
+<p>首先需要配置<code>tasks.json</code>。在<code>.vscode</code>文件夹中添加空白文件<code>tasks.json</code>。我个人的<code>tasks.json</code>的内容如下：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;tasks&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span></span><br><span class="line">    <span class="punctuation">&#123;</span></span><br><span class="line">      <span class="attr">&quot;type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;shell&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;label&quot;</span><span class="punctuation">:</span> <span class="string">&quot;Rebuild kernel&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;command&quot;</span><span class="punctuation">:</span> <span class="string">&quot;/usr/bin/sh&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;args&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span></span><br><span class="line">        <span class="string">&quot;$&#123;workspaceFolder&#125;/rebuild.sh&quot;</span></span><br><span class="line">      <span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;options&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">        <span class="attr">&quot;cwd&quot;</span><span class="punctuation">:</span> <span class="string">&quot;$&#123;workspaceFolder&#125;&quot;</span></span><br><span class="line">      <span class="punctuation">&#125;</span></span><br><span class="line">    <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="punctuation">&#123;</span></span><br><span class="line">      <span class="attr">&quot;type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;cppbuild&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;label&quot;</span><span class="punctuation">:</span> <span class="string">&quot;Build createimage&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;command&quot;</span><span class="punctuation">:</span> <span class="string">&quot;/usr/bin/gcc&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;args&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span></span><br><span class="line">        <span class="string">&quot;-fdiagnostics-color=always&quot;</span><span class="punctuation">,</span></span><br><span class="line">        <span class="string">&quot;-g&quot;</span><span class="punctuation">,</span></span><br><span class="line">        <span class="string">&quot;$&#123;workspaceFolder&#125;/tools/createimage.c&quot;</span><span class="punctuation">,</span></span><br><span class="line">        <span class="string">&quot;-o&quot;</span><span class="punctuation">,</span></span><br><span class="line">        <span class="string">&quot;$&#123;workspaceFolder&#125;/build/createimage&quot;</span></span><br><span class="line">      <span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;problemMatcher&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span></span><br><span class="line">        <span class="string">&quot;$gcc&quot;</span></span><br><span class="line">      <span class="punctuation">]</span></span><br><span class="line">    <span class="punctuation">&#125;</span></span><br><span class="line">  <span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">  </span><br><span class="line">  <span class="attr">&quot;version&quot;</span><span class="punctuation">:</span> <span class="string">&quot;2.0.0&quot;</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+<p>可以看到，<code>tasks</code>这个数组中有两个对象(此处涉及到json格式以及javascript的一些内容，有不懂或者感兴趣的地方可以自行查询相关资料)，分别代表了两个任务，<code>label</code>字段为任务的名称。</p>
+<p>每一个任务都相当于在命令行执行了一条命令：</p>
+<ul>
+<li><code>command</code>就是使用的可执行文件，比如<code>gcc</code>, <code>bash</code></li>
+<li><code>args</code>就是传递给这些可执行命令的参数</li>
+<li><code>cwd</code>代表该命令执行时所在的目录。</li>
+</ul>
+<p>在配置好<code>tasks.json</code>之后，如何在调试之前运行任务呢？只需要将<code>launch.json</code>中<code>preLaunchTask</code>字段设置为对应的任务的名字即可。</p>
+<h3 id="调试过程">3.3 调试过程</h3>
+<p>在配置好上面提到的配置文件之后，我们就可以开心的开始调试了，调试流程也变得非常简单。</p>
+<p>在vscode的内置终端中输入<code>make debug</code>(或者其他命令，视情况而定)：</p>
+<p><img src="/assets/oslab-guide-1.png" /></p>
+<p>可以看到程序陷入了等待状态，此时我们单击调试按钮或者按F5，之后会自动跳转到DEBUG CONSOLE窗口，这时回到TERMINAL，可以看到如下情形：</p>
+<p><img src="/assets/oslab-guide-2.png" /></p>
+<p>在按任意键之后，可以看到执行任务的终端被关闭，回到了刚才输入<code>make debug</code>的窗口，此时原来被阻塞的程序开始运行：</p>
+<p><img src="/assets/oslab-guide-3.png" /></p>
+<p>输入loadboot后，内核开始运行，会在你打断点的地方停住：</p>
+<p><img src="/assets/oslab-guide-4.png" /></p>
+<p>这样我们就成功的实现调试可视化了，左边栏分别是局部变量、监视变量、函数调用栈以及断点，右边就是我们的源代码，下面是qemu进程，可以实时监视它的输出。不仅如此，单步执行、转到函数定义、终止调试都很方便。</p>
+<h3 id="使用gdb其他命令">3.4 使用gdb其他命令</h3>
+<p>配置好vscode之后，单步调试就不用我们一直在命令行里面输next了，非常的方便，但在有些情况下，还是会用到gdb的命令的，比如使用<code>x</code>命令查看某块内存的值，或者是使用<code>wa</code>命令监视变量的值，而这些命令vscode C/C++插件都没有可视化的支持。那么如何在vscode中使用这些命令呢？</p>
+<p>在启动调试之后，转到DEBUG CONSOLE一栏：</p>
+<p><img src="/assets/oslab-guide-5.png" /></p>
+<p>在图中，vscode插件给出了相应的提示：</p>
+<blockquote>
+<p>Execute debugger commands using "-exec <command>", for example "-exec info registers" will list registers in use (when GDB is the debugger)</p>
+</blockquote>
+<p>也就是说，如果你需要用到上述gdb命令的话，只需要在对话框中输入相应的命令，并在命令之前添加<code>-exec</code>前缀即可：</p>
+<p><img src="/assets/oslab-guide-6.png" /></p>
+<h3 id="gdb脚本">3.5 gdb脚本</h3>
+<p>通常同学们在调试内核的时候，会有这样一个需求：每次在调试的时候，都要输入一些命令，来设置gdb的一些选项，比如我每次都会输入下面的命令：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">set confirm off</span><br><span class="line">set disassemble-next-line auto	# 调试汇编时自动输出下一行的汇编代码</span><br><span class="line">set output-radix 16				# 设置gdb的数字输出格式为16</span><br><span class="line">b _start</span><br></pre></td></tr></table></figure>
+<p>每次开启调试，都需要在命令行里面输入这些命令，而要想找到一个bug，需要调试非常多次，如果每次调试都需要我们手动去输入这些命令的话，会显得非常繁琐。</p>
+<p>正如我前面提到的那样，<strong>任何繁琐且机械的操作，我们都可以交给程序来做</strong>。这里同样有办法来解决这个问题，就是之前我提到过的那个<code>launch.json</code>里面的那个字段：<code>postRemoteConnectCommands</code>。可以大致猜出来这个选项的意思是在连接成功后，执行一些命令，这样的话我们就可以利用这个机制，执行gdb命令。</p>
+<p>首先创建一个gdb脚本文件<code>.gdbinit</code>，在这里面输入你需要执行的命令，之后设置<code>launch.json</code>中的对应字段：</p>
+<p><em>launch.json</em></p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">  <span class="attr">&quot;configurations&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span></span><br><span class="line">    <span class="punctuation">&#123;</span></span><br><span class="line">      <span class="comment">// ...</span></span><br><span class="line">      <span class="attr">&quot;postRemoteConnectCommands&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span></span><br><span class="line">        <span class="punctuation">&#123;</span><span class="attr">&quot;text&quot;</span><span class="punctuation">:</span> <span class="string">&quot;source $&#123;workspaceFolder&#125;/.gdbinit&quot;</span><span class="punctuation">&#125;</span></span><br><span class="line">      <span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">      <span class="comment">// ...</span></span><br><span class="line">    <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">    ...</span><br><span class="line">  <span class="punctuation">]</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+<h3 id="调试汇编">3.6 调试汇编</h3>
+<p>同学们在调试内核的时候经常会需要调试汇编，这样就来了问题了：之前的配置，都只是调试C源文件，汇编文件怎么去调试呢？或者我想调试C语言编译出来的汇编，又该怎么办呢？别着急，让我一一为同学们解答。</p>
+<p>当你用gdb命令行调试汇编的时候，最通用的办法就是使用gdb自带的tui。在gdb命令行中输入<code>layout asm</code>即可出现汇编语言的调试界面，很不幸的是，教学团队给的gdb中不含tui，那又该怎么办呢？</p>
+<p>如果你坚持使用gdb命令行调试汇编，那么可以使用这样一条命令：<code>x/10i $pc</code>，表示打印当前PC寄存器指向的指令，并且打印该指令后面的9条指令。这样的话，也是可以的。</p>
+<p>但是如何用vscode来调试汇编呢？其实在编译的时候，汇编源文件的调试信息已经被编译到了kernel可执行文件中，所以当你在C源文件中step into到一个汇编函数时，会直接跳转到相应的汇编文件中，非常的方便。但是这个方式有一个致命的缺点：不能给在汇编文件上打断点。你用鼠标单击汇编文件的行号左侧，可以发现是打不上断点的。那还有其他的办法来给一条汇编指令打断点吗？</p>
+<p>幸运的是，C/C++ 插件提供了这样的一个支持。转到侧边栏左侧CALL STACK一栏，找到当前所在的函数，右击：</p>
+<p><img src="/assets/oslab-guide-7.png" /></p>
+<p>单击Open Disassembly View，可以看到如下界面：</p>
+<p><img src="/assets/oslab-guide-8.png" /></p>
+<p>这样当前执行的汇编一目了然，也可以在某一条指令处设置断点，非常的方便。</p>
+<h3 id="调试用户态测试程序">3.7 调试用户态测试程序</h3>
+<p>在很多情况下，我们需要调试教学团队给出的测试文件，但是上面所有的配置都是关于调试内核的。这个问题解决起来用到这样两个命令：<code>file</code>和<code>add-symbol-file</code>。</p>
+<p>当你想调试用户态测试文件的时候，使用这两个命令，并在参数中指定要调试的<strong><em>可执行文件</em></strong>的目录即可。这两个命令有一些微小的区别：</p>
+<ul>
+<li>file命令是切换调试的文件</li>
+<li>add-symbol-file 只是让gdb多解析了一些符号，并不会切换调试的文件</li>
+</ul>
+<p>上面这两个命令我没有具体了解过，有错误的话欢迎同学们斧正。使用这两个命令之后，就可以正常调试测试程序了：</p>
+<p><img src="/assets/oslab-guide-9.png" /></p>
+<h2 id="后记">4. 后记</h2>
+<p>这篇文章并不是一个保姆级别的教程，只是提供了一个大致的思路，供同学们去思考和实践。对vscode不熟悉的同学，会在配置的过程中踩非常多的坑，遇到非常多的麻烦。对此我想说的是：</p>
+<ul>
+<li>这是一个非常锻炼人的一个过程，也是一个非常好的一个提高自己动手能力与信息检索能力的机会</li>
+<li><p>我不是保姆，我不会回答每一个同学的所有问题，我只会回答其中有价值的部分。实际上，你使用vscode遇到的问题，在你之前已经有很多人遇到了，他们也会写博客总结，你只需要通过搜索引擎来获取他们的经验，来解决自己的问题</p></li>
+<li>在提问之前，首先要学会如何问问题，这里前人总结出了一篇文章<a target="_blank" rel="noopener" href="https://github.com/tvvocold/How-To-Ask-Questions-The-Smart-Way">提问的智慧</a>，供同学们参考。有一个比较重要的点是：如果搜索引擎能够回答你的问题，最好不要去麻烦别人</li>
+<li><p>欢迎大家的提问与交流，我的邮箱是anwentao1@gmail.com；我会根据同学们的问题不断更新这篇博客，同时欢迎同学分享你的经验，如果你的经验对同学们非常有价值，我会更新这篇博客，并在相应的地方标注你的名字和联系方式</p></li>
+</ul>
+<p>最后，祝同学们学习愉快！^(*￣(oo)￣)^</p>
+
+    </div>
+
+  </article>
+  <div class="toc-container">
+    
+  <div id="toc" class="toc-article">
+    <strong class="toc-title">Posts</strong>
+    <ol class="toc"><li class="toc-item toc-level-2"><a class="toc-link" href="#%E5%87%86%E5%A4%87"><span class="toc-text">1. 准备</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E9%85%8D%E7%BD%AE"><span class="toc-text">2. 配置</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E8%B0%83%E8%AF%95"><span class="toc-text">3. 调试</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E9%85%8D%E7%BD%AElaunch.json"><span class="toc-text">3.1 配置launch.json</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E9%85%8D%E7%BD%AEtasks.json"><span class="toc-text">3.2 配置tasks.json</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E8%B0%83%E8%AF%95%E8%BF%87%E7%A8%8B"><span class="toc-text">3.3 调试过程</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E4%BD%BF%E7%94%A8gdb%E5%85%B6%E4%BB%96%E5%91%BD%E4%BB%A4"><span class="toc-text">3.4 使用gdb其他命令</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#gdb%E8%84%9A%E6%9C%AC"><span class="toc-text">3.5 gdb脚本</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E8%B0%83%E8%AF%95%E6%B1%87%E7%BC%96"><span class="toc-text">3.6 调试汇编</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E8%B0%83%E8%AF%95%E7%94%A8%E6%88%B7%E6%80%81%E6%B5%8B%E8%AF%95%E7%A8%8B%E5%BA%8F"><span class="toc-text">3.7 调试用户态测试程序</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E5%90%8E%E8%AE%B0"><span class="toc-text">4. 后记</span></a></li></ol>
+  </div>
+
+
+  </div>
+</div>
+<div class="copyright">
+    <span>本作品采用</span>
+    <a target="_blank" rel="noopener" href="https://creativecommons.org/licenses/by/4.0/">知识共享署名 4.0 国际许可协议</a>
+    <span>进行许可。 转载时请注明原文链接。</span>
+</div>
+  
+    <div class="post-nav">
+      <div class="post-nav-item post-nav-next">
+        
+          <span>〈 </span>
+          <a href="/golang/notes-on-golang-garbage-collection.html" rel="next" title="Notes on Golang Garbage Collection">
+          Notes on Golang Garbage Collection
+          </a>
+        
+      </div>
+  
+      <div class="post-nav-item post-nav-prev">
+          
+          <a href="/others/bookmark.html" rel="prev" title="Bookmark">
+            Bookmark
+          </a>
+          <span>〉</span>
+        
+      </div>
+    </div>
+  
+
+
+    </div>
+
+    
+
+  </div>
+  <footer class="footer text-center">
+    <div id="bottom-inner">
+        <a class="bottom-item" href="https://timesea05.github.io">首页</a> |
+        <a class="bottom-item" href="https://timesea05.github.io" target="_blank">主站</a> |
+        <a class="bottom-item" href="https://github.com/TimeSea05" target="_blank">GitHub</a> |
+        <a class="bottom-item" href="https://hexo.io" target="_blank">Powered by hexo</a> |
+        <a class="bottom-item" href="https://github.com/KevinOfNeu/hexo-theme-xoxo" target="_blank">Theme xoxo</a>
+    </div>
+</footer>
+  
+
+<script>
+  (function(window, document, undefined) {
+
+    var timer = null;
+
+    function returnTop() {
+      cancelAnimationFrame(timer);
+      timer = requestAnimationFrame(function fn() {
+        var oTop = document.body.scrollTop || document.documentElement.scrollTop;
+        if (oTop > 0) {
+          document.body.scrollTop = document.documentElement.scrollTop = oTop - 50;
+          timer = requestAnimationFrame(fn);
+        } else {
+          cancelAnimationFrame(timer);
+        }
+      });
+    }
+
+    var hearts = [];
+    window.requestAnimationFrame = (function() {
+      return window.requestAnimationFrame ||
+        window.webkitRequestAnimationFrame ||
+        window.mozRequestAnimationFrame ||
+        window.oRequestAnimationFrame ||
+        window.msRequestAnimationFrame ||
+        function(callback) {
+          setTimeout(callback, 1000 / 60);
+        }
+    })();
+    init();
+
+    function init() {
+      css(".heart{z-index:9999;width: 10px;height: 10px;position: fixed;background: #f00;transform: rotate(45deg);-webkit-transform: rotate(45deg);-moz-transform: rotate(45deg);}.heart:after,.heart:before{content: '';width: inherit;height: inherit;background: inherit;border-radius: 50%;-webkit-border-radius: 50%;-moz-border-radius: 50%;position: absolute;}.heart:after{top: -5px;}.heart:before{left: -5px;}");
+      attachEvent();
+      gameloop();
+      addMenuEvent();
+    }
+
+    function gameloop() {
+      for (var i = 0; i < hearts.length; i++) {
+        if (hearts[i].alpha <= 0) {
+          document.body.removeChild(hearts[i].el);
+          hearts.splice(i, 1);
+          continue;
+        }
+        hearts[i].y--;
+        hearts[i].scale += 0.004;
+        hearts[i].alpha -= 0.013;
+        hearts[i].el.style.cssText = "left:" + hearts[i].x + "px;top:" + hearts[i].y + "px;opacity:" + hearts[i].alpha + ";transform:scale(" + hearts[i].scale + "," + hearts[i].scale + ") rotate(45deg);background:" + hearts[i].color;
+      }
+      requestAnimationFrame(gameloop);
+    }
+
+    /**
+     * 给logo设置点击事件
+     * 
+     * - 回到顶部
+     * - 出现爱心
+     */
+    function attachEvent() {
+      var old = typeof window.onclick === "function" && window.onclick;
+      var logo = document.getElementById("logo");
+      if (logo) {
+        logo.onclick = function(event) {
+          returnTop();
+          old && old();
+          createHeart(event);
+        }
+      }
+      
+    }
+
+    function createHeart(event) {
+      var d = document.createElement("div");
+      d.className = "heart";
+      hearts.push({
+        el: d,
+        x: event.clientX - 5,
+        y: event.clientY - 5,
+        scale: 1,
+        alpha: 1,
+        color: randomColor()
+      });
+      document.body.appendChild(d);
+    }
+
+    function css(css) {
+      var style = document.createElement("style");
+      style.type = "text/css";
+      try {
+        style.appendChild(document.createTextNode(css));
+      } catch (ex) {
+        style.styleSheet.cssText = css;
+      }
+      document.getElementsByTagName('head')[0].appendChild(style);
+    }
+
+    function randomColor() {
+      // return "rgb(" + (~~(Math.random() * 255)) + "," + (~~(Math.random() * 255)) + "," + (~~(Math.random() * 255)) + ")";
+      return "#F44336";
+    }
+
+    function addMenuEvent() {
+      var menu = document.getElementById('menu-main-post');
+      if (menu) {
+        var toc = document.getElementById('toc');
+        if (toc) {
+          menu.onclick = function() {
+            if (toc) {
+              if (toc.style.display == 'block') {
+                toc.style.display = 'none';
+              } else {
+                toc.style.display = 'block';
+              }
+            }
+          };
+        } else {
+          menu.style.display = 'none';
+        }
+      }
+    }
+
+  })(window, document);
+</script>
+
+  
+
+
+
+<script type="text/x-mathjax-config">
+    MathJax.Hub.Config({
+        tex2jax: {
+            inlineMath: [ ["$","$"], ["\\(","\\)"] ],
+            skipTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+            processEscapes: true
+        }
+    });
+    MathJax.Hub.Queue(function() {
+        var all = MathJax.Hub.getAllJax();
+        for (var i = 0; i < all.length; ++i)
+            all[i].SourceElement().parentNode.className += ' has-jax';
+    });
+</script>
+<script src="http://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+</body>
+</html>

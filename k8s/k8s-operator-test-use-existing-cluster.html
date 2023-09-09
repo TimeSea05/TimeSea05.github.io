@@ -1,0 +1,308 @@
+
+<!DOCTYPE html>
+<html lang="en">
+
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#202020"/>
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  <script src="//busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js" async></script>
+  
+  
+    <meta name="keywords" content="Kubernetes," />
+  
+
+  
+    <meta name="description" content="Test Kubernetes Operator Using an Existing Cluster" />
+  
+  
+  <link rel="icon" type="image/x-icon" href="/logo.png">
+  <title>Test Kubernetes Operator Using an Existing Cluster [ Blog ]</title>
+  
+    <!-- stylesheets list from config.yml -->
+    
+      <link rel="stylesheet" href="//cdn.bootcss.com/pure/1.0.0/pure-min.css">
+    
+      <link rel="stylesheet" href="/css/xoxo.css">
+    
+  
+<meta name="generator" content="Hexo 6.3.0"></head>
+
+
+<body>
+  <div class="nav-container">
+    <nav class="home-menu pure-menu pure-menu-horizontal">
+  <a class="pure-menu-heading" href="/">
+    <img class="avatar" src="https://timesea05.github.io/assets/logo.jpg">
+    <span class="title">Blog</span>
+  </a>
+
+  <ul class="pure-menu-list clearfix">
+      
+          
+            <li class="pure-menu-item"><a href="/" class="pure-menu-link">Home</a></li>
+          
+      
+          
+            <li class="pure-menu-item"><a href="/archives" class="pure-menu-link">Archives</a></li>
+          
+      
+          
+            <li class="pure-menu-item"><a href="/categories" class="pure-menu-link">Categories</a></li>
+          
+      
+          
+            <li class="pure-menu-item"><a href="/tags" class="pure-menu-link">Tags</a></li>
+          
+      
+          
+            <li class="pure-menu-item"><a href="/about" class="pure-menu-link">About</a></li>
+          
+      
+          
+            <li class="pure-menu-item"><a href="/atom.xml" class="pure-menu-link">RSS</a></li>
+          
+      
+  </ul>
+   
+</nav>
+  </div>
+
+  <div class="container" id="content-outer">
+    <div class="inner" id="content-inner">
+      <div class="post-container">
+  <article class="post" id="post">
+    <header class="post-header text-center">
+      <h1 class="title">
+        Test Kubernetes Operator Using an Existing Cluster
+      </h1>
+      <span>
+        
+        <time class="time" datetime="2023-02-07T00:00:00.000Z">
+        2023-02-07
+      </time>
+        
+      </span>
+      <span class="slash">/</span>
+      <span class="post-meta">
+      <span class="post-tags">
+        <ul class="article-tag-list" itemprop="keywords"><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/Kubernetes/" rel="tag">Kubernetes</a></li></ul>
+      </span>
+    </span>
+
+    </header>
+
+    <div class="post-content">
+      <p>在使用kubebuilder构建脚手架并完成其中的Reconcile逻辑后，我们需要为其编写自动化测试，方便以后的开发，否则每次都要先用<code>make run</code>先把 k8s 环境跑起来，再用<code>kubectl apply -f xxx.yaml</code>提交给k8s，观察资源变化，这样会非常麻烦。</p>
+<p>幸好controller runtime为我们提供了envtest框架，帮助我们对开发的operator进行测试，使用的测试框架为<a target="_blank" rel="noopener" href="https://github.com/onsi/ginkgo">Ginkgo</a>. 关于使用envtest对开发的operator进行crud类型的测试的文章已经有很多了，这里就不再详尽阐述了，具体可以参考这篇文章：https://lailin.xyz/post/operator-07-kubebuilder-test.html</p>
+<p>需要注意的是，我们在使用envtest进行测试时，只是启动了一个API server和etcd数据库，我们的代码里面调用k8s API创建资源，在测试时只是向etcd数据库中写入记录，测试的过程中不会真正的去创建资源，比如创建pod，job等。这样测试起来比较方便，完全可以支持curd类型的测试。但是如果我们的operator比较复杂，而且你想测试你开发的operator一些更高级的功能时，envtest提供的这个API server和etcd 数据库就无法满足我们的需求了。</p>
+<p>在开发 <a target="_blank" rel="noopener" href="https://github.com/OpenRHINO/RHINO-Operator">RHINO-Operator</a> 的过程中，就遇到了这样的问题。项目中需要对Operator进行一个完整的测试，也就是说在测试的过程中必须要去创建pod, job等资源，因此envtest的环境无法为RHINO-Operator的测试提供完整的支持。</p>
+<p>那么应该如何解决这个问题？既然envtest无法启动一个完整的k8s环境来测试我们的operator，那么是否可以将我们的operator放到已有的集群上进行测试，比如本地的minikube？</p>
+<p>在互联网上寻找了很久也没有找到相关资料，最后从一个不起眼的角落里面找到了答案，参考微软<code>k8s-cronjob-prescaler</code>这个项目：<a target="_blank" rel="noopener" href="https://github.com/microsoft/k8s-cronjob-prescaler/blob/f44bc23d206e584ec2f7fbf4d3239b559db3bfeb/controllers/suite_test.go#L48">Link</a></p>
+<p>只需要将<code>envtest.Environment</code>中<code>UseExistingCluster</code>字段置为true，即可使用本地的k8s集群进行测试了。微软的这个项目是使用kind进行测试的，RHINO-Operator是使用minikube进行测试的，测试同样能够正常进行并顺利通过。</p>
+<p>通过kubectl命令行可以看到，在测试过程中，的确创建了相应的资源，而不只是向数据库中写入数据：</p>
+<p><img src="https://i.328888.xyz/2023/02/07/rTPlP.png" /></p>
+<p>测试也能正常通过：</p>
+<p><img src="https://i.328888.xyz/2023/02/07/rTTxX.png" /></p>
+<p>RHINO-Operator的测试代码地址：<a target="_blank" rel="noopener" href="https://github.com/OpenRHINO/RHINO-Operator/blob/main/controllers/suite_test.go">Link</a></p>
+
+    </div>
+
+  </article>
+  <div class="toc-container">
+    
+
+  </div>
+</div>
+<div class="copyright">
+    <span>本作品采用</span>
+    <a target="_blank" rel="noopener" href="https://creativecommons.org/licenses/by/4.0/">知识共享署名 4.0 国际许可协议</a>
+    <span>进行许可。 转载时请注明原文链接。</span>
+</div>
+  
+    <div class="post-nav">
+      <div class="post-nav-item post-nav-next">
+        
+          <span>〈 </span>
+          <a href="/k8s/k8s-operator-note.html" rel="next" title="Notes on Kubernetes Operator Development">
+          Notes on Kubernetes Operator Development
+          </a>
+        
+      </div>
+  
+      <div class="post-nav-item post-nav-prev">
+          
+          <a href="/golang/dlv-debug-go-with-plugin.html" rel="prev" title="Debug go programs with plugins using VSCode Go extension">
+            Debug go programs with plugins using VSCode Go extension
+          </a>
+          <span>〉</span>
+        
+      </div>
+    </div>
+  
+
+
+    </div>
+
+    
+
+  </div>
+  <footer class="footer text-center">
+    <div id="bottom-inner">
+        <a class="bottom-item" href="https://timesea05.github.io">首页</a> |
+        <a class="bottom-item" href="https://timesea05.github.io" target="_blank">主站</a> |
+        <a class="bottom-item" href="https://github.com/TimeSea05" target="_blank">GitHub</a> |
+        <a class="bottom-item" href="https://hexo.io" target="_blank">Powered by hexo</a> |
+        <a class="bottom-item" href="https://github.com/KevinOfNeu/hexo-theme-xoxo" target="_blank">Theme xoxo</a>
+    </div>
+</footer>
+  
+
+<script>
+  (function(window, document, undefined) {
+
+    var timer = null;
+
+    function returnTop() {
+      cancelAnimationFrame(timer);
+      timer = requestAnimationFrame(function fn() {
+        var oTop = document.body.scrollTop || document.documentElement.scrollTop;
+        if (oTop > 0) {
+          document.body.scrollTop = document.documentElement.scrollTop = oTop - 50;
+          timer = requestAnimationFrame(fn);
+        } else {
+          cancelAnimationFrame(timer);
+        }
+      });
+    }
+
+    var hearts = [];
+    window.requestAnimationFrame = (function() {
+      return window.requestAnimationFrame ||
+        window.webkitRequestAnimationFrame ||
+        window.mozRequestAnimationFrame ||
+        window.oRequestAnimationFrame ||
+        window.msRequestAnimationFrame ||
+        function(callback) {
+          setTimeout(callback, 1000 / 60);
+        }
+    })();
+    init();
+
+    function init() {
+      css(".heart{z-index:9999;width: 10px;height: 10px;position: fixed;background: #f00;transform: rotate(45deg);-webkit-transform: rotate(45deg);-moz-transform: rotate(45deg);}.heart:after,.heart:before{content: '';width: inherit;height: inherit;background: inherit;border-radius: 50%;-webkit-border-radius: 50%;-moz-border-radius: 50%;position: absolute;}.heart:after{top: -5px;}.heart:before{left: -5px;}");
+      attachEvent();
+      gameloop();
+      addMenuEvent();
+    }
+
+    function gameloop() {
+      for (var i = 0; i < hearts.length; i++) {
+        if (hearts[i].alpha <= 0) {
+          document.body.removeChild(hearts[i].el);
+          hearts.splice(i, 1);
+          continue;
+        }
+        hearts[i].y--;
+        hearts[i].scale += 0.004;
+        hearts[i].alpha -= 0.013;
+        hearts[i].el.style.cssText = "left:" + hearts[i].x + "px;top:" + hearts[i].y + "px;opacity:" + hearts[i].alpha + ";transform:scale(" + hearts[i].scale + "," + hearts[i].scale + ") rotate(45deg);background:" + hearts[i].color;
+      }
+      requestAnimationFrame(gameloop);
+    }
+
+    /**
+     * 给logo设置点击事件
+     * 
+     * - 回到顶部
+     * - 出现爱心
+     */
+    function attachEvent() {
+      var old = typeof window.onclick === "function" && window.onclick;
+      var logo = document.getElementById("logo");
+      if (logo) {
+        logo.onclick = function(event) {
+          returnTop();
+          old && old();
+          createHeart(event);
+        }
+      }
+      
+    }
+
+    function createHeart(event) {
+      var d = document.createElement("div");
+      d.className = "heart";
+      hearts.push({
+        el: d,
+        x: event.clientX - 5,
+        y: event.clientY - 5,
+        scale: 1,
+        alpha: 1,
+        color: randomColor()
+      });
+      document.body.appendChild(d);
+    }
+
+    function css(css) {
+      var style = document.createElement("style");
+      style.type = "text/css";
+      try {
+        style.appendChild(document.createTextNode(css));
+      } catch (ex) {
+        style.styleSheet.cssText = css;
+      }
+      document.getElementsByTagName('head')[0].appendChild(style);
+    }
+
+    function randomColor() {
+      // return "rgb(" + (~~(Math.random() * 255)) + "," + (~~(Math.random() * 255)) + "," + (~~(Math.random() * 255)) + ")";
+      return "#F44336";
+    }
+
+    function addMenuEvent() {
+      var menu = document.getElementById('menu-main-post');
+      if (menu) {
+        var toc = document.getElementById('toc');
+        if (toc) {
+          menu.onclick = function() {
+            if (toc) {
+              if (toc.style.display == 'block') {
+                toc.style.display = 'none';
+              } else {
+                toc.style.display = 'block';
+              }
+            }
+          };
+        } else {
+          menu.style.display = 'none';
+        }
+      }
+    }
+
+  })(window, document);
+</script>
+
+  
+
+
+
+<script type="text/x-mathjax-config">
+    MathJax.Hub.Config({
+        tex2jax: {
+            inlineMath: [ ["$","$"], ["\\(","\\)"] ],
+            skipTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+            processEscapes: true
+        }
+    });
+    MathJax.Hub.Queue(function() {
+        var all = MathJax.Hub.getAllJax();
+        for (var i = 0; i < all.length; ++i)
+            all[i].SourceElement().parentNode.className += ' has-jax';
+    });
+</script>
+<script src="http://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+</body>
+</html>

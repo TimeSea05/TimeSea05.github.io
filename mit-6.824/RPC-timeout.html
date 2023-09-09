@@ -1,0 +1,317 @@
+
+<!DOCTYPE html>
+<html lang="en">
+
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#202020"/>
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  <script src="//busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js" async></script>
+  
+  
+    <meta name="keywords" content="MIT 6.824," />
+  
+
+  
+    <meta name="description" content="Handle RPC Call Timeout Failures in Distributed Systems" />
+  
+  
+  <link rel="icon" type="image/x-icon" href="/logo.png">
+  <title>Handle RPC Call Timeout Failures in Distributed Systems [ Blog ]</title>
+  
+    <!-- stylesheets list from config.yml -->
+    
+      <link rel="stylesheet" href="//cdn.bootcss.com/pure/1.0.0/pure-min.css">
+    
+      <link rel="stylesheet" href="/css/xoxo.css">
+    
+  
+<meta name="generator" content="Hexo 6.3.0"></head>
+
+
+<body>
+  <div class="nav-container">
+    <nav class="home-menu pure-menu pure-menu-horizontal">
+  <a class="pure-menu-heading" href="/">
+    <img class="avatar" src="https://timesea05.github.io/assets/logo.jpg">
+    <span class="title">Blog</span>
+  </a>
+
+  <ul class="pure-menu-list clearfix">
+      
+          
+            <li class="pure-menu-item"><a href="/" class="pure-menu-link">Home</a></li>
+          
+      
+          
+            <li class="pure-menu-item"><a href="/archives" class="pure-menu-link">Archives</a></li>
+          
+      
+          
+            <li class="pure-menu-item"><a href="/categories" class="pure-menu-link">Categories</a></li>
+          
+      
+          
+            <li class="pure-menu-item"><a href="/tags" class="pure-menu-link">Tags</a></li>
+          
+      
+          
+            <li class="pure-menu-item"><a href="/about" class="pure-menu-link">About</a></li>
+          
+      
+          
+            <li class="pure-menu-item"><a href="/atom.xml" class="pure-menu-link">RSS</a></li>
+          
+      
+  </ul>
+   
+</nav>
+  </div>
+
+  <div class="container" id="content-outer">
+    <div class="inner" id="content-inner">
+      <div class="post-container">
+  <article class="post" id="post">
+    <header class="post-header text-center">
+      <h1 class="title">
+        Handle RPC Call Timeout Failures in Distributed Systems
+      </h1>
+      <span>
+        
+        <time class="time" datetime="2023-04-20T00:00:00.000Z">
+        2023-04-20
+      </time>
+        
+      </span>
+      <span class="slash">/</span>
+      <span class="post-meta">
+      <span class="post-tags">
+        <ul class="article-tag-list" itemprop="keywords"><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/MIT-6-824/" rel="tag">MIT 6.824</a></li></ul>
+      </span>
+    </span>
+
+    </header>
+
+    <div class="post-content">
+      <p>本文是<em>MIT 6.824 Distrubuted System</em>的lab2的实战经验总结。</p>
+<p>6.824的测试代码对raft实现的robustness提出了非常高的要求，以Test 1B为例，Test 1B测试的是分布式系统在存在节点断连重连的情况下，Leader Election能否正常工作。关于Raft算法中Leader Election的算法细节，在raft-extend论文中有非常详细的讲解，此处不再赘述。</p>
+<p>Test 1B中，系统有3个节点，分别设为0, 1, 2。在选举出Leader (假设为0) 之后，立即将该节点从网络中断开。断开后剩余的两个节点 (1, 2) 不会收到来自原来Leader的Heart Beat，因此它们之间会重新进行选举。</p>
+<p>假设节点1首先Election Timeout，节点1成为Candidate。由于节点1无从知晓节点0已经从网络中断开，所以它还是会想节点0发送RequestVote RPC。当然，节点1也会向节点2发送RequestVote RPC。在我的实现中，Candidate需要在收到所有的节点的RequestVote Reply之后，才能决定自己是否当选为Leader，但是由于节点0已经从网络中断开，向其发送RPC不会得到恢复，在相当长时间后 (&gt; 2s)，RPC call才会返回，结果为fail。所以在节点1等待RPC call返回的过程中，节点2又会发生Election Timeout，将其置为Candiate，开始新一轮的Leader Election。在旧一轮的Leader Election没有结束的情况下，再开启新的一轮Leader Election肯定是不符合raft-extended paper对Leader Election实现的表述的，因此我们的实现需要改进。</p>
+<p>改进的思路大概就是，如果RPC call在超过一段时间 (<code>RPCTimeout</code>) 没有返回，就将Empty Reply返回给RPC call的调用者。</p>
+<p>首先设置一个常量<code>RPCTimeout</code>，代表能够容忍的RPC call的最高延时。在后面的测试中，测试代码会设置分布式系统的<code>longDelays</code>字段为<code>true</code>，这样的话，远程节点在相应RPC call后，系统再过200ms才会把结果返回给RPC的调用者。所以此处我将其设置为400ms：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">const</span> RPCTimeout = <span class="number">400</span> * time.Millisecond</span><br></pre></td></tr></table></figure>
+<p>每一次调用RPC与其他节点通信，都要启动一个单独的线程，防止阻塞，同时需要给RPC call做一层封装，如果RPC call超时，那么将其返回的结果丢弃：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// This wrapper is used to deal with RPC network latency issues</span></span><br><span class="line"><span class="comment">// Every time you need to make an RPC call, put all info you need into a RPCInfo struct,</span></span><br><span class="line"><span class="comment">// start a new `RPCTimeoutWapper` goroutine, pass that struct to the wrapper.</span></span><br><span class="line"><span class="comment">// The wrapper will make an RPC call, wait for its return</span></span><br><span class="line"><span class="comment">// When it returns, it will check if timeout occurs</span></span><br><span class="line"><span class="comment">// if not, put RPC reply into channel `replyCh`, else exit</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(rf *Raft)</span></span> RPCWrapper(info RPCInfo, replyCh <span class="keyword">chan</span> <span class="keyword">interface</span>&#123;&#125;) &#123;</span><br><span class="line">	info.startTime = time.Now()</span><br><span class="line"></span><br><span class="line">	<span class="keyword">switch</span> args := info.args.(<span class="keyword">type</span>) &#123;</span><br><span class="line">	<span class="keyword">case</span> RequestVoteArgs:</span><br><span class="line">		reply := info.reply.(RequestVoteReply)</span><br><span class="line">		rf.peers[info.peer].Call(info.name, &amp;args, &amp;reply)</span><br><span class="line">		info.reply = reply</span><br><span class="line">	<span class="keyword">case</span> AppendEntriesArgs:</span><br><span class="line">		reply := info.reply.(AppendEntriesReply)</span><br><span class="line">		rf.peers[info.peer].Call(info.name, &amp;args, &amp;reply)</span><br><span class="line">		info.reply = reply</span><br><span class="line">	<span class="keyword">case</span> InstallSnapshotArgs:</span><br><span class="line">		reply := info.reply.(<span class="type">int</span>)</span><br><span class="line">		rf.peers[info.peer].Call(info.name, &amp;args, &amp;reply)</span><br><span class="line">		info.reply = reply</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">if</span> time.Since(info.startTime) &lt; RPCTimeout &#123;</span><br><span class="line">		replyCh &lt;- info.reply</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>结构体<code>RPCInfo</code>的定义如下：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// All you need to make an RPC call</span></span><br><span class="line"><span class="comment">// type of args and reply is `interface&#123;&#125;`</span></span><br><span class="line"><span class="comment">// to support all kinds of RPCArgs and RPCReply</span></span><br><span class="line"><span class="keyword">type</span> RPCInfo <span class="keyword">struct</span> &#123;</span><br><span class="line">	name      <span class="type">string</span></span><br><span class="line">	peer      <span class="type">int</span>       <span class="comment">// which raft peer to send RPC to</span></span><br><span class="line">	startTime time.Time <span class="comment">// time the RPC is called</span></span><br><span class="line"></span><br><span class="line">	args  <span class="keyword">interface</span>&#123;&#125;</span><br><span class="line">	reply <span class="keyword">interface</span>&#123;&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这里没有使用go 1.18提供的泛型，而是使用了被广为诟病的<code>interface&#123;&#125;</code>。由于笔者对go 1.18泛型不够熟悉，便只好采用<code>interface&#123;&#125;</code>来支持不同类型的RPC Args结构体。</p>
+<p>在RPC wrapper中，使用go的type switch判断<code>info.args</code>的类型，不同的类型调用不同的RPC。如果RPC call没有超时，那么我们就将结果返回给调用者。这里的返回不是传统的<code>return</code>，而是将<code>reply</code>放到事先定义好的channel <code>replyCh</code>中；调用者在启动线程后便阻塞在<code>replyCh</code>这个channel上，在这个线程将reply传入<code>replyCh</code>后，线程解除阻塞，实现了所谓的"返回"。</p>
+<p>在启动单独的线程进行RPC call的同时，需要启动另外一个线程<code>RPCTimeoutHandler</code>，这个线程检测到之前的RPC call超时，就会将一个Empty Reply返回给RPC的调用者：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// Every time you make an RPC call, you need to start a `RPCTimeoutHandler` thread</span></span><br><span class="line"><span class="comment">// if the RPC call you make time out, this thread will send an empty reply to `replyCh`</span></span><br><span class="line"><span class="comment">// which means the return value of RPC call made before is ignored</span></span><br><span class="line"><span class="comment">// If RPC call finished successfully, main thread(who start this ticker thread) will</span></span><br><span class="line"><span class="comment">// send a value to channel `rpcFinished` to tell the thread not to send a empty reply to `replyCh`</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(rf *Raft)</span></span> RPCTimeoutHandler(replyCh <span class="keyword">chan</span> <span class="keyword">interface</span>&#123;&#125;, info RPCInfo, rpcFinished <span class="keyword">chan</span> <span class="type">bool</span>) &#123;</span><br><span class="line">	time.Sleep(RPCTimeout)</span><br><span class="line">	<span class="keyword">if</span> <span class="built_in">len</span>(replyCh) == <span class="number">0</span> &amp;&amp; <span class="built_in">len</span>(rpcFinished) == <span class="number">0</span> &#123;</span><br><span class="line">		<span class="keyword">switch</span> info.reply.(<span class="keyword">type</span>) &#123;</span><br><span class="line">		<span class="keyword">case</span> RequestVoteReply:</span><br><span class="line">			replyCh &lt;- RequestVoteReply&#123;&#125;</span><br><span class="line">		<span class="keyword">case</span> AppendEntriesReply:</span><br><span class="line">			replyCh &lt;- AppendEntriesReply&#123;&#125;</span><br><span class="line">		<span class="keyword">case</span> <span class="type">int</span>:</span><br><span class="line">			replyCh &lt;- <span class="number">0</span></span><br><span class="line">		&#125;</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>同样的，这个线程也是在检测到超时之后，将Empty Reply传入预先定义好的channel <code>replyCh</code>中。但是如果RPC call没有超时，那么这个线程就不应该将Empty Reply传入<code>replyCh</code>了，但是这个该如何实现呢？只需要事先定义好另外一个channel <code>rpcFinished</code>，当RPC caller收到了来自其他节点的回复是，就会将一个值传入<code>rpcFinished</code>，此时<code>len(rpcFinished) == 1</code>；该线程会检测<code>len(rpcFinished)</code>的值，如果不为0，也就是说RPC caller通知该线程，RPC已经完成，且没有超时，那么这个线程就不会将Empty Reply传入<code>replyCh</code>了。</p>
+<p>一个使用该方法来解决RPC call高延迟的示例如下：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// Make sure that every time you call this function</span></span><br><span class="line"><span class="comment">// you must hold `rf.mu`</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(rf *Raft)</span></span> issueInstallSnapshotRPC(peer <span class="type">int</span>) <span class="type">int</span> &#123;</span><br><span class="line">	args := InstallSnapshotArgs&#123;</span><br><span class="line">		Term:              rf.currentTerm,</span><br><span class="line">		LeaderID:          rf.me,</span><br><span class="line">		LastIncludedIndex: rf.lastIncludedIdx,</span><br><span class="line">		LastIncludedTerm:  rf.lastIncludedTerm,</span><br><span class="line">		Data:              rf.persister.ReadSnapshot(),</span><br><span class="line">	&#125;</span><br><span class="line">	rf.mu.Unlock()</span><br><span class="line"></span><br><span class="line">	snapshotStr := <span class="string">&quot;non-nil&quot;</span></span><br><span class="line">	<span class="keyword">if</span> args.Data == <span class="literal">nil</span> &#123;</span><br><span class="line">		snapshotStr = <span class="string">&quot;nil&quot;</span></span><br><span class="line">	&#125;</span><br><span class="line">	DebugLog(dSnapshot, rf.me, <span class="string">&quot;INSTALL Snapshot -&gt; PEER %d; &#123;T:%d,LLI:%d,LIT:%d,DATA:%s&#125;&quot;</span>,</span><br><span class="line">		peer, args.Term, args.LastIncludedIndex, args.LastIncludedTerm, snapshotStr)</span><br><span class="line"></span><br><span class="line">	<span class="keyword">var</span> reply <span class="type">int</span></span><br><span class="line">	replyCh := <span class="built_in">make</span>(<span class="keyword">chan</span> <span class="keyword">interface</span>&#123;&#125;, <span class="number">1</span>)</span><br><span class="line">	rpcInfo := RPCInfo&#123;</span><br><span class="line">		peer:  peer,</span><br><span class="line">		name:  <span class="string">&quot;Raft.InstallSnapshot&quot;</span>,</span><br><span class="line">		args:  args,</span><br><span class="line">		reply: reply,</span><br><span class="line">	&#125;</span><br><span class="line">	rpcFinished := <span class="built_in">make</span>(<span class="keyword">chan</span> <span class="type">bool</span>, <span class="number">1</span>)</span><br><span class="line"></span><br><span class="line">	<span class="keyword">go</span> rf.RPCWrapper(rpcInfo, replyCh)</span><br><span class="line">	<span class="keyword">go</span> rf.RPCTimeoutHandler(replyCh, rpcInfo, rpcFinished)</span><br><span class="line"></span><br><span class="line">	replyTerm := (&lt;-replyCh).(<span class="type">int</span>)</span><br><span class="line">	rpcFinished &lt;- <span class="literal">true</span></span><br><span class="line"></span><br><span class="line">	<span class="keyword">return</span> replyTerm</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>可以看到，正如我们上面所说的，当一个节点需要通过RPC与其他节点进行通信的时候，首先定义两个channel <code>replyCh</code>和<code>rpcFinished</code>，用来实现线程之间的通信；之后启动这两个线程：<code>RPCWrapper</code>和<code>RPCTimeoutHandler</code>；之后RPC caller会阻塞在<code>replyCh</code>上。当RPC 返回时，caller接触阻塞，继续向下执行，并向<code>rpcFinished</code>传入一个值通知<code>RPCTimeoutHandler</code>RPC call结束。</p>
+<p>一个需要注意的点是，为了支持各种RPC reply，<code>replyCh</code>的类型为<code>chan interface&#123;&#125;</code>，从这个channel中取出的值需要进行类型断言才能使用。</p>
+<p>在写博客的时候，突然发现了代码中的一个小问题：当RPC call超时，<code>RPCTimeoutHandler</code>线程会将Empty Reply返回给caller，此时caller继续向下执行，但还是会向<code>rpcFinished</code>传入一个值，但此时<code>RPCTimeoutHandler</code>线程已经退出，不需要再向这个channel中传值了。如果您想出了这个问题的解决办法，欢迎联系我。</p>
+
+    </div>
+
+  </article>
+  <div class="toc-container">
+    
+
+  </div>
+</div>
+<div class="copyright">
+    <span>本作品采用</span>
+    <a target="_blank" rel="noopener" href="https://creativecommons.org/licenses/by/4.0/">知识共享署名 4.0 国际许可协议</a>
+    <span>进行许可。 转载时请注明原文链接。</span>
+</div>
+  
+    <div class="post-nav">
+      <div class="post-nav-item post-nav-next">
+        
+          <span>〈 </span>
+          <a href="/golang/dlv-debug-go-with-plugin.html" rel="next" title="Debug go programs with plugins using VSCode Go extension">
+          Debug go programs with plugins using VSCode Go extension
+          </a>
+        
+      </div>
+  
+      <div class="post-nav-item post-nav-prev">
+          
+          <a href="/ds_and_alg/hashtable-deletion.html" rel="prev" title="Lazy Deletion in Linear Probing Hashtable">
+            Lazy Deletion in Linear Probing Hashtable
+          </a>
+          <span>〉</span>
+        
+      </div>
+    </div>
+  
+
+
+    </div>
+
+    
+
+  </div>
+  <footer class="footer text-center">
+    <div id="bottom-inner">
+        <a class="bottom-item" href="https://timesea05.github.io">首页</a> |
+        <a class="bottom-item" href="https://timesea05.github.io" target="_blank">主站</a> |
+        <a class="bottom-item" href="https://github.com/TimeSea05" target="_blank">GitHub</a> |
+        <a class="bottom-item" href="https://hexo.io" target="_blank">Powered by hexo</a> |
+        <a class="bottom-item" href="https://github.com/KevinOfNeu/hexo-theme-xoxo" target="_blank">Theme xoxo</a>
+    </div>
+</footer>
+  
+
+<script>
+  (function(window, document, undefined) {
+
+    var timer = null;
+
+    function returnTop() {
+      cancelAnimationFrame(timer);
+      timer = requestAnimationFrame(function fn() {
+        var oTop = document.body.scrollTop || document.documentElement.scrollTop;
+        if (oTop > 0) {
+          document.body.scrollTop = document.documentElement.scrollTop = oTop - 50;
+          timer = requestAnimationFrame(fn);
+        } else {
+          cancelAnimationFrame(timer);
+        }
+      });
+    }
+
+    var hearts = [];
+    window.requestAnimationFrame = (function() {
+      return window.requestAnimationFrame ||
+        window.webkitRequestAnimationFrame ||
+        window.mozRequestAnimationFrame ||
+        window.oRequestAnimationFrame ||
+        window.msRequestAnimationFrame ||
+        function(callback) {
+          setTimeout(callback, 1000 / 60);
+        }
+    })();
+    init();
+
+    function init() {
+      css(".heart{z-index:9999;width: 10px;height: 10px;position: fixed;background: #f00;transform: rotate(45deg);-webkit-transform: rotate(45deg);-moz-transform: rotate(45deg);}.heart:after,.heart:before{content: '';width: inherit;height: inherit;background: inherit;border-radius: 50%;-webkit-border-radius: 50%;-moz-border-radius: 50%;position: absolute;}.heart:after{top: -5px;}.heart:before{left: -5px;}");
+      attachEvent();
+      gameloop();
+      addMenuEvent();
+    }
+
+    function gameloop() {
+      for (var i = 0; i < hearts.length; i++) {
+        if (hearts[i].alpha <= 0) {
+          document.body.removeChild(hearts[i].el);
+          hearts.splice(i, 1);
+          continue;
+        }
+        hearts[i].y--;
+        hearts[i].scale += 0.004;
+        hearts[i].alpha -= 0.013;
+        hearts[i].el.style.cssText = "left:" + hearts[i].x + "px;top:" + hearts[i].y + "px;opacity:" + hearts[i].alpha + ";transform:scale(" + hearts[i].scale + "," + hearts[i].scale + ") rotate(45deg);background:" + hearts[i].color;
+      }
+      requestAnimationFrame(gameloop);
+    }
+
+    /**
+     * 给logo设置点击事件
+     * 
+     * - 回到顶部
+     * - 出现爱心
+     */
+    function attachEvent() {
+      var old = typeof window.onclick === "function" && window.onclick;
+      var logo = document.getElementById("logo");
+      if (logo) {
+        logo.onclick = function(event) {
+          returnTop();
+          old && old();
+          createHeart(event);
+        }
+      }
+      
+    }
+
+    function createHeart(event) {
+      var d = document.createElement("div");
+      d.className = "heart";
+      hearts.push({
+        el: d,
+        x: event.clientX - 5,
+        y: event.clientY - 5,
+        scale: 1,
+        alpha: 1,
+        color: randomColor()
+      });
+      document.body.appendChild(d);
+    }
+
+    function css(css) {
+      var style = document.createElement("style");
+      style.type = "text/css";
+      try {
+        style.appendChild(document.createTextNode(css));
+      } catch (ex) {
+        style.styleSheet.cssText = css;
+      }
+      document.getElementsByTagName('head')[0].appendChild(style);
+    }
+
+    function randomColor() {
+      // return "rgb(" + (~~(Math.random() * 255)) + "," + (~~(Math.random() * 255)) + "," + (~~(Math.random() * 255)) + ")";
+      return "#F44336";
+    }
+
+    function addMenuEvent() {
+      var menu = document.getElementById('menu-main-post');
+      if (menu) {
+        var toc = document.getElementById('toc');
+        if (toc) {
+          menu.onclick = function() {
+            if (toc) {
+              if (toc.style.display == 'block') {
+                toc.style.display = 'none';
+              } else {
+                toc.style.display = 'block';
+              }
+            }
+          };
+        } else {
+          menu.style.display = 'none';
+        }
+      }
+    }
+
+  })(window, document);
+</script>
+
+  
+
+
+
+<script type="text/x-mathjax-config">
+    MathJax.Hub.Config({
+        tex2jax: {
+            inlineMath: [ ["$","$"], ["\\(","\\)"] ],
+            skipTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+            processEscapes: true
+        }
+    });
+    MathJax.Hub.Queue(function() {
+        var all = MathJax.Hub.getAllJax();
+        for (var i = 0; i < all.length; ++i)
+            all[i].SourceElement().parentNode.className += ' has-jax';
+    });
+</script>
+<script src="http://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+</body>
+</html>

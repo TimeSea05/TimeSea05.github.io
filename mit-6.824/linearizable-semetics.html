@@ -1,0 +1,340 @@
+
+<!DOCTYPE html>
+<html lang="en">
+
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#202020"/>
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  <script src="//busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js" async></script>
+  
+  
+    <meta name="keywords" content="MIT 6.824," />
+  
+
+  
+    <meta name="description" content="Implement Linearizable Semantics in Raft" />
+  
+  
+  <link rel="icon" type="image/x-icon" href="/logo.png">
+  <title>Implement Linearizable Semantics in Raft [ Blog ]</title>
+  
+    <!-- stylesheets list from config.yml -->
+    
+      <link rel="stylesheet" href="//cdn.bootcss.com/pure/1.0.0/pure-min.css">
+    
+      <link rel="stylesheet" href="/css/xoxo.css">
+    
+  
+<meta name="generator" content="Hexo 6.3.0"></head>
+
+
+<body>
+  <div class="nav-container">
+    <nav class="home-menu pure-menu pure-menu-horizontal">
+  <a class="pure-menu-heading" href="/">
+    <img class="avatar" src="https://timesea05.github.io/assets/logo.jpg">
+    <span class="title">Blog</span>
+  </a>
+
+  <ul class="pure-menu-list clearfix">
+      
+          
+            <li class="pure-menu-item"><a href="/" class="pure-menu-link">Home</a></li>
+          
+      
+          
+            <li class="pure-menu-item"><a href="/archives" class="pure-menu-link">Archives</a></li>
+          
+      
+          
+            <li class="pure-menu-item"><a href="/categories" class="pure-menu-link">Categories</a></li>
+          
+      
+          
+            <li class="pure-menu-item"><a href="/tags" class="pure-menu-link">Tags</a></li>
+          
+      
+          
+            <li class="pure-menu-item"><a href="/about" class="pure-menu-link">About</a></li>
+          
+      
+          
+            <li class="pure-menu-item"><a href="/atom.xml" class="pure-menu-link">RSS</a></li>
+          
+      
+  </ul>
+   
+</nav>
+  </div>
+
+  <div class="container" id="content-outer">
+    <div class="inner" id="content-inner">
+      <div class="post-container">
+  <article class="post" id="post">
+    <header class="post-header text-center">
+      <h1 class="title">
+        Implement Linearizable Semantics in Raft
+      </h1>
+      <span>
+        
+        <time class="time" datetime="2023-05-02T00:00:00.000Z">
+        2023-05-02
+      </time>
+        
+      </span>
+      <span class="slash">/</span>
+      <span class="post-meta">
+      <span class="post-tags">
+        <ul class="article-tag-list" itemprop="keywords"><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/MIT-6-824/" rel="tag">MIT 6.824</a></li></ul>
+      </span>
+    </span>
+
+    </header>
+
+    <div class="post-content">
+      <p><em>本文为MIT 6.824 Lab3的实战经验总结。</em></p>
+<p>项目地址：https://github.com/TimeSea05/mit-6.824</p>
+<p>Lab3A的第一个任务是在Lab2的基础上，在没有丢包、服务器崩溃的情况下，实现键值存储系统。在理清思路后，实现起来相对比较容易。Clerk会向集群中的KV server发送RPC请求，来从集群中获取某个key对应的值(<code>Get</code>)，或者修改数据库中的key/value pair (<code>PutAppend</code>)。当一个非Leader的KV server收到来自Clerk的RPC请求时，应该返回错误<code>ErrWrongLeader</code>；Clerk在接收到来自KV server的错误信息后，向另外一个KV server发送同样的RPC请求，直到收到RPC请求的KV server为集群中的Leader，此时Leader会将该请求加入Log，并在集群中开始同步，同步完成后返回成功。</p>
+<p>实际上，为了提高效率，在RPC返回成功时，Clerk应该记录下刚才向哪一个KV server发送RPC请求，也就是记录下那一个KV server是集群当中的Leader，这样在发送下一个RPC请求时，首先向之前记录下的KV server发送请求，这样就会大大减少搜索Leader浪费的时间。</p>
+<p>Lab3A的第二个任务是，在存在丢包、服务器崩溃的情况下，实现键值存储系统。丢包会带来很多问题，比如Clerk向KV server发送PutAppend RPC请求，server返回成功，并对数据库做了相应的操作，但是请求在返回过程中丢失，导致Clerk重发请求，这会导致同样的请求执行两次或者多次，显然是违背常理的。</p>
+<p>为了解决这个问题，就要实现raft-extended paper中的Linearizable Sematics:</p>
+<blockquote>
+<p>Our goal for Raft is to implement linearizable semantics (each operation appears to execute instantaneously, exactly once, at some point between its invocation and its response).</p>
+</blockquote>
+<p>Raft的作者在文中其实给出了一些解决方案，但当时自己没有认真读论文，闷着头自己想解决办法，最后失败而不得已求助于互联网，才知道论文里面已经给出了一些方案：</p>
+<blockquote>
+<p>The solution is for clients to assign unique serial numbers to every command. Then, the state machine tracks the latest serial number processed for each client, along with the associated response. If it receives a command whose serial number has already been executed, it responds immediately without re-executing the request.</p>
+</blockquote>
+<p>对每一个RPC请求进行编号，并且记录下已经执行过的操作的序号；如果执行过了，那么就直接返回，不再对数据库进行相应的操作。</p>
+<p>但其实原文中给出的解决方案相对来说还是比较抽象和含糊的，落实到代码实现上还是没有什么头绪。于是我在互联网上继续寻找，找到了Raft高性能库<code>dragonboat</code>作者在知乎上的<a target="_blank" rel="noopener" href="https://www.zhihu.com/question/278551592/answer/400962941">回答</a>。看了他的回答，感觉如同醍醐灌顶，思路瞬间明晰了。</p>
+<p>和Raft论文中所述的方案一样，需要为每一个RPC设置一个线性增长的ID，同时还需要为每一个Clerk设置一个ID。有了这两个ID之后，可以区分任意两个RPC请求。<code>dragonboat</code>作者回答的另外一个核心是，<strong>每一个RPC请求，可以被commit多次，在log中出现多次，但永远只会被apply一次</strong>。也就是说，在集群收到来自Clerk的RPC之后，我们不需要对其进行其他的处理，直接将其加入到Leader的Log中，开始同步即可；但是在读取被commit的log entry时，也就是要对数据库进行操作时，需要判断该log entry (op)是否已经被状态机执行过了，如果执行过，那么就忽略此次commit。这样就实现了幂等。</p>
+<p>之前我想破头也想不出实现Linearizable Semantics的原因是，我是在集群刚刚收到来自Clerk RPC时，判断RPC请求执行的操作是否已经被执行过了，这样会带来一系列的问题和Bug，最终放弃。但是将上面的判断逻辑放到对数据库进行操作处之后，实现难度大大降低了。</p>
+<p>首先来看KVServer的数据结构：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> KVServer <span class="keyword">struct</span> &#123;</span><br><span class="line">	mu      sync.Mutex</span><br><span class="line">	me      <span class="type">int</span></span><br><span class="line">	rf      *raft.Raft</span><br><span class="line">	applyCh <span class="keyword">chan</span> raft.ApplyMsg</span><br><span class="line">	dead    <span class="type">int32</span> <span class="comment">// set by Kill()</span></span><br><span class="line"></span><br><span class="line">	maxraftstate <span class="type">int</span> <span class="comment">// snapshot if log grows this big</span></span><br><span class="line"></span><br><span class="line">	<span class="comment">// Your definitions here.</span></span><br><span class="line">	term        <span class="type">int</span> <span class="comment">// current term of raft peer</span></span><br><span class="line">	commitIndex <span class="type">int</span> <span class="comment">// committed log index of raft peer</span></span><br><span class="line">	cond        *sync.Cond</span><br><span class="line">	db          <span class="keyword">map</span>[<span class="type">string</span>]<span class="type">string</span></span><br><span class="line"></span><br><span class="line">	<span class="comment">// clerkID -&gt; `RPCID` of lastly executed RPC call</span></span><br><span class="line">	lastExecuted <span class="keyword">map</span>[<span class="type">int</span>]<span class="type">int</span></span><br><span class="line"></span><br><span class="line">	<span class="comment">// waiting RPC calls</span></span><br><span class="line">	waitingReqs []ClientRequest</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>核心结构如上所示，为了实现线性语义，我添加了两个字段：对于每一个Clerk，<code>lastExecuted[ClerkID]</code>用来记录已经执行过的RPC ID的最大值；<code>waitingReqs</code>用来记录等待在<code>cond</code>上的RPC请求，用来精确唤醒线程。</p>
+<p>其他的一些数据结构如下：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Op <span class="keyword">struct</span> &#123;</span><br><span class="line">	<span class="comment">// Your definitions here.</span></span><br><span class="line">	<span class="comment">// Field names must start with capital letters,</span></span><br><span class="line">	<span class="comment">// otherwise RPC will break.</span></span><br><span class="line">	Type    <span class="type">string</span> <span class="comment">// Get, Put or Append</span></span><br><span class="line">	Key     <span class="type">string</span></span><br><span class="line">	Value   <span class="type">string</span></span><br><span class="line">	ClerkID <span class="type">int</span></span><br><span class="line">	RPCID   <span class="type">int</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> ClientRequest <span class="keyword">struct</span> &#123;</span><br><span class="line">	ClerkID <span class="type">int</span></span><br><span class="line">	RPCID   <span class="type">int</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>以<code>PutAppend</code> RPC Handler为例，来说明整个键值存储系统的运行过程。</p>
+<p>首先需要判断当前的KV server是否是Leader，如果不是则返回<code>ErrWrongLeader</code>，因为在Raft中，只有Leader能够发起同步。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(kv *KVServer)</span></span> PutAppend(args *PutAppendArgs, reply *PutAppendReply) &#123;</span><br><span class="line">	<span class="comment">// Your code here.</span></span><br><span class="line">	kv.mu.Lock()</span><br><span class="line"></span><br><span class="line">	term, isLeader := kv.rf.GetState()</span><br><span class="line">	<span class="keyword">if</span> !isLeader &#123;</span><br><span class="line">		reply.Err = ErrWrongLeader</span><br><span class="line">		raft.DebugLog(raft.DReplyPutOrAppend, kv.me, <span class="string">&quot;Reject: %s&quot;</span>, reply.Err)</span><br><span class="line">		kv.mu.Unlock()</span><br><span class="line">		<span class="keyword">return</span></span><br><span class="line">	&#125;</span><br><span class="line">	<span class="comment">// ...</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>之后需要判断<code>term</code>的值是否发生了变化；如果是，那么就代表集群中的term发生了改变，该KV server为新选举出来的Leader；无论该KV server之前是否担任过Leader，都应该调用<code>kv.cond.Broadcast</code>将等待在条件变量上的超时线程全部唤醒，来处理新的RPC请求，同时<code>kv.waitingReq</code>数组也应该清空。Clerk会丢弃来自这些超时线程的应答。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(kv *KVServer)</span></span> PutAppend(args *PutAppendArgs, reply *PutAppendReply) &#123;</span><br><span class="line">	<span class="comment">// ...</span></span><br><span class="line">	<span class="keyword">if</span> kv.term &lt; term &#123;</span><br><span class="line">		kv.term = term</span><br><span class="line">		kv.cond.Broadcast()</span><br><span class="line">		kv.waitingReqs = <span class="literal">nil</span></span><br><span class="line">	&#125;</span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>此后调用<code>kv.rf.Start</code>将op记录到日志中，然后在条件变量<code>kv.cond</code>上等待，直到该op被commit之后被唤醒：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(kv *KVServer)</span></span> PutAppend(args *PutAppendArgs, reply *PutAppendReply) &#123;</span><br><span class="line">	<span class="comment">// ...</span></span><br><span class="line">	op := Op&#123;</span><br><span class="line">		Type:    args.Op,</span><br><span class="line">		Key:     args.Key,</span><br><span class="line">		Value:   args.Value,</span><br><span class="line">		ClerkID: args.ClerkID,</span><br><span class="line">		RPCID:   args.RPCID,</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	kv.waitingReqs = <span class="built_in">append</span>(kv.waitingReqs, ClientRequest&#123;ClerkID: args.ClerkID, RPCID: args.RPCID&#125;)</span><br><span class="line">	<span class="comment">// logging about RPC calls waiting on this key-value server</span></span><br><span class="line">	waitingReqsStr := <span class="string">&quot;waitingReqs:[&quot;</span></span><br><span class="line">	<span class="keyword">for</span> _, r := <span class="keyword">range</span> kv.waitingReqs &#123;</span><br><span class="line">		waitingReqsStr += fmt.Sprintf(<span class="string">&quot;%d:%d;&quot;</span>, r.ClerkID, r.RPCID)</span><br><span class="line">	&#125;</span><br><span class="line">	raft.DebugLog(raft.DReplyGet, kv.me, <span class="string">&quot;%s]&quot;</span>, waitingReqsStr)</span><br><span class="line"></span><br><span class="line">	kv.rf.Start(op)</span><br><span class="line">	kv.cond.Wait()</span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>被唤醒之后，也是要进行同样的判断，看该KV server是否是Leader，以及判断term是否发生了改变；如果这些情况都符合要求，那么返回OK：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(kv *KVServer)</span></span> PutAppend(args *PutAppendArgs, reply *PutAppendReply) &#123;</span><br><span class="line">	<span class="comment">// ...</span></span><br><span class="line">	term, isLeader = kv.rf.GetState()</span><br><span class="line">	<span class="keyword">if</span> !isLeader &#123;</span><br><span class="line">		reply.Err = ErrWrongLeader</span><br><span class="line">		raft.DebugLog(raft.DReplyPutOrAppend, kv.me, <span class="string">&quot;Reject: %s&quot;</span>, reply.Err)</span><br><span class="line">		kv.mu.Unlock()</span><br><span class="line">		<span class="keyword">return</span></span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">if</span> kv.term &lt; term &#123;</span><br><span class="line">		kv.term = term</span><br><span class="line">		kv.cond.Broadcast()</span><br><span class="line">		kv.waitingReqs = <span class="literal">nil</span></span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	reply.Err = OK</span><br><span class="line">	raft.DebugLog(raft.DReplyPutOrAppend, kv.me, <span class="string">&quot;Reply %s&#123;%s:%s&#125;: SUCCESS; db[%s]:%s&quot;</span>,</span><br><span class="line">		args.Op, args.Key, args.Value, args.Key, kv.db[args.Key])</span><br><span class="line">	kv.mu.Unlock()</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>说了这么多，那么当线程在<code>kv.cond</code>上等待时，由哪一个线程来唤醒？Linearizable Semantics又是在哪里实现的？在另外一个函数<code>KVServer.readApplyCh</code>中。</p>
+<p>每启动一个KV Server，都要启动一个相应的<code>KVServer.readApplyCh</code>线程，用来读取Raft peer commit的log entry，并对db作出相应的操作：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(kv *KVServer)</span></span> readApplyCh() &#123;</span><br><span class="line">	<span class="keyword">for</span> msg := <span class="keyword">range</span> kv.applyCh &#123;</span><br><span class="line">		<span class="keyword">if</span> kv.killed() &#123;</span><br><span class="line">			<span class="keyword">return</span></span><br><span class="line">		&#125;</span><br><span class="line">		kv.mu.Lock()</span><br><span class="line"></span><br><span class="line">		<span class="keyword">if</span> msg.SnapshotValid &#123; <span class="comment">// install a snapshot</span></span><br><span class="line">			kv.ingestSnapshot(msg.Snapshot)</span><br><span class="line">		&#125; <span class="keyword">else</span> <span class="keyword">if</span> msg.CommandValid &#123; <span class="comment">// commit a log entry</span></span><br><span class="line">			op := msg.Command.(Op)</span><br><span class="line">			kv.commitIndex = msg.CommandIndex</span><br><span class="line"></span><br><span class="line">			<span class="comment">// check if this op has already been executed</span></span><br><span class="line">			<span class="keyword">if</span> kv.lastExecuted[op.ClerkID] &lt; op.RPCID &#123;</span><br><span class="line">				<span class="keyword">switch</span> op.Type &#123;</span><br><span class="line">				<span class="keyword">case</span> <span class="string">&quot;Put&quot;</span>:</span><br><span class="line">					kv.db[op.Key] = op.Value</span><br><span class="line">				<span class="keyword">case</span> <span class="string">&quot;Append&quot;</span>:</span><br><span class="line">					kv.db[op.Key] += op.Value</span><br><span class="line">				&#125;</span><br><span class="line">				raft.DebugLog(raft.DReplyPutOrAppend, kv.me, <span class="string">&quot;(CK:%d,RPC:%d,Op:%s,Key:%s,Value:%s): db[%s]==%s&quot;</span>,</span><br><span class="line">					op.ClerkID, op.RPCID, op.Type, op.Key, op.Value, op.Key, kv.db[op.Key])</span><br><span class="line">				raft.DebugLog(raft.DReplyGet, kv.me, <span class="string">&quot;lastExecuted[%d]: %d -&gt; %d&quot;</span>, op.ClerkID,</span><br><span class="line">					kv.lastExecuted[op.ClerkID], op.RPCID)</span><br><span class="line">				kv.lastExecuted[op.ClerkID] = op.RPCID</span><br><span class="line">			&#125;</span><br><span class="line"></span><br><span class="line">			<span class="keyword">if</span> kv.maxraftstate != <span class="number">-1</span> &amp;&amp; kv.rf.Persister.RaftStateSize() &gt; kv.maxraftstate &#123;</span><br><span class="line">				raft.DebugLog(raft.DSnapshot, kv.me, <span class="string">&quot;Take Snapshot, Index:%d&quot;</span>, kv.commitIndex)</span><br><span class="line">				kv.rf.Snapshot(kv.commitIndex, kv.takeSnapshot())</span><br><span class="line">			&#125;</span><br><span class="line"></span><br><span class="line">			<span class="comment">// if this kv server is not leader, then it should not wake up</span></span><br><span class="line">			<span class="comment">// threads waiting on its conditional variable</span></span><br><span class="line">			_, isLeader := kv.rf.GetState()</span><br><span class="line">			<span class="keyword">if</span> !isLeader &#123;</span><br><span class="line">				kv.mu.Unlock()</span><br><span class="line">				<span class="keyword">continue</span></span><br><span class="line">			&#125;</span><br><span class="line"></span><br><span class="line">			<span class="comment">// Only when there are threads waiting on `kv.cond`: len(kv.waitingReqs &gt; 0)</span></span><br><span class="line">			<span class="comment">// and `ClerkID` &amp;&amp; `RPCID` of the log entry commited just now is the same as</span></span><br><span class="line">			<span class="comment">// the first thread waiting on `kv.cond`&#x27;s queue,</span></span><br><span class="line">			<span class="comment">// can we use `kv.cond.Signal` to wake up the first thread waiting on `kv.cond`</span></span><br><span class="line">			<span class="keyword">if</span> <span class="built_in">len</span>(kv.waitingReqs) &gt; <span class="number">0</span> &amp;&amp; kv.waitingReqs[<span class="number">0</span>].ClerkID == op.ClerkID &amp;&amp; kv.waitingReqs[<span class="number">0</span>].RPCID == op.RPCID &#123;</span><br><span class="line">				kv.cond.Signal()</span><br><span class="line">				kv.waitingReqs = kv.waitingReqs[<span class="number">1</span>:]</span><br><span class="line">			&#125;</span><br><span class="line">		&#125;</span><br><span class="line"></span><br><span class="line">		kv.mu.Unlock()</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这里的实现还涉及到Lab 3B的Snapshot的实现了，此处不进行展开，重点看非Snapshot部分。</p>
+<p>此处判断一个OP或者RPC是否被执行过了，是比较<code>op.RPCID</code>和<code>kv.lastExecuted[op.ClerkID]</code>；只有在<code>kv.lastExecuted[op.ClerkID] &lt; op.RPCID</code>成立的情况下才可以执行op中的操作，并且将<code>kv.lastExecyted[op.ClerkID]</code>更新为<code>op.RPCID</code>。</p>
+<p>但是这样实现是不是有问题呢？按理说，<code>kv.lastExecuted[op.ClerkID]</code>应该记录所有已经被执行过的RPC的ID，而不是最近一次执行过的，每次判断RPC是否被执行过，都应该在这个数组中搜索<code>op.RPCID</code>。需要注意的是，RPCID的值是线性递增的，而且如果RPC请求失败的话，Clerk会不断重发相同ID的RPC请求。按如上所述，在它之前的RPCID为1, 2, ..., op.RPCID-1，都必定被执行过了，所以说我们只需要存储最近一次执行过的RPCID即可。</p>
+<p>另外我们用<code>kv.waitingReqs</code>数组，实现了精确线程唤醒。为什么需要精确地唤醒线程？想想如下这样一个场景：</p>
+<ul>
+<li>Clerk向集群发送了一个Put请求(Put{3:5})和Get请求(Get 3)，两个相应的线程在<code>kv.cond</code>上等待commit，假设需要同步的这两个新的log entry的index分别为80，81</li>
+<li>当前集群中的Leader因为某种原因(如服务器崩溃重启)，<code>commitIndex</code>比较落后，在不断地向前进行commit</li>
+<li>如果在commit index为70，71的时候，不小心将前面两个线程给唤醒了，但实际上index为80，81的log entry都没有被commit，相应的操作没有被执行，Clerk的Get请求(Get 3)得到的是旧值，违反了Linearizable Semantics</li>
+</ul>
+<p>所以我们需要精确唤醒，只有等待在<code>kv.cond</code>上的第一个线程，和当前commit的log entry对应时，才可以调用<code>kv.cond.Signal</code>唤醒该线程，同时从<code>kv.waitingReqs</code>中去掉第一个元素。</p>
+
+    </div>
+
+  </article>
+  <div class="toc-container">
+    
+
+  </div>
+</div>
+<div class="copyright">
+    <span>本作品采用</span>
+    <a target="_blank" rel="noopener" href="https://creativecommons.org/licenses/by/4.0/">知识共享署名 4.0 国际许可协议</a>
+    <span>进行许可。 转载时请注明原文链接。</span>
+</div>
+  
+    <div class="post-nav">
+      <div class="post-nav-item post-nav-next">
+        
+          <span>〈 </span>
+          <a href="/ds_and_alg/hashtable-deletion.html" rel="next" title="Lazy Deletion in Linear Probing Hashtable">
+          Lazy Deletion in Linear Probing Hashtable
+          </a>
+        
+      </div>
+  
+      <div class="post-nav-item post-nav-prev">
+          
+          <a href="/linux/ld_preload_hook.html" rel="prev" title="Use LD_PRELOAD to hook libc Library Functions">
+            Use LD_PRELOAD to hook libc Library Functions
+          </a>
+          <span>〉</span>
+        
+      </div>
+    </div>
+  
+
+
+    </div>
+
+    
+
+  </div>
+  <footer class="footer text-center">
+    <div id="bottom-inner">
+        <a class="bottom-item" href="https://timesea05.github.io">首页</a> |
+        <a class="bottom-item" href="https://timesea05.github.io" target="_blank">主站</a> |
+        <a class="bottom-item" href="https://github.com/TimeSea05" target="_blank">GitHub</a> |
+        <a class="bottom-item" href="https://hexo.io" target="_blank">Powered by hexo</a> |
+        <a class="bottom-item" href="https://github.com/KevinOfNeu/hexo-theme-xoxo" target="_blank">Theme xoxo</a>
+    </div>
+</footer>
+  
+
+<script>
+  (function(window, document, undefined) {
+
+    var timer = null;
+
+    function returnTop() {
+      cancelAnimationFrame(timer);
+      timer = requestAnimationFrame(function fn() {
+        var oTop = document.body.scrollTop || document.documentElement.scrollTop;
+        if (oTop > 0) {
+          document.body.scrollTop = document.documentElement.scrollTop = oTop - 50;
+          timer = requestAnimationFrame(fn);
+        } else {
+          cancelAnimationFrame(timer);
+        }
+      });
+    }
+
+    var hearts = [];
+    window.requestAnimationFrame = (function() {
+      return window.requestAnimationFrame ||
+        window.webkitRequestAnimationFrame ||
+        window.mozRequestAnimationFrame ||
+        window.oRequestAnimationFrame ||
+        window.msRequestAnimationFrame ||
+        function(callback) {
+          setTimeout(callback, 1000 / 60);
+        }
+    })();
+    init();
+
+    function init() {
+      css(".heart{z-index:9999;width: 10px;height: 10px;position: fixed;background: #f00;transform: rotate(45deg);-webkit-transform: rotate(45deg);-moz-transform: rotate(45deg);}.heart:after,.heart:before{content: '';width: inherit;height: inherit;background: inherit;border-radius: 50%;-webkit-border-radius: 50%;-moz-border-radius: 50%;position: absolute;}.heart:after{top: -5px;}.heart:before{left: -5px;}");
+      attachEvent();
+      gameloop();
+      addMenuEvent();
+    }
+
+    function gameloop() {
+      for (var i = 0; i < hearts.length; i++) {
+        if (hearts[i].alpha <= 0) {
+          document.body.removeChild(hearts[i].el);
+          hearts.splice(i, 1);
+          continue;
+        }
+        hearts[i].y--;
+        hearts[i].scale += 0.004;
+        hearts[i].alpha -= 0.013;
+        hearts[i].el.style.cssText = "left:" + hearts[i].x + "px;top:" + hearts[i].y + "px;opacity:" + hearts[i].alpha + ";transform:scale(" + hearts[i].scale + "," + hearts[i].scale + ") rotate(45deg);background:" + hearts[i].color;
+      }
+      requestAnimationFrame(gameloop);
+    }
+
+    /**
+     * 给logo设置点击事件
+     * 
+     * - 回到顶部
+     * - 出现爱心
+     */
+    function attachEvent() {
+      var old = typeof window.onclick === "function" && window.onclick;
+      var logo = document.getElementById("logo");
+      if (logo) {
+        logo.onclick = function(event) {
+          returnTop();
+          old && old();
+          createHeart(event);
+        }
+      }
+      
+    }
+
+    function createHeart(event) {
+      var d = document.createElement("div");
+      d.className = "heart";
+      hearts.push({
+        el: d,
+        x: event.clientX - 5,
+        y: event.clientY - 5,
+        scale: 1,
+        alpha: 1,
+        color: randomColor()
+      });
+      document.body.appendChild(d);
+    }
+
+    function css(css) {
+      var style = document.createElement("style");
+      style.type = "text/css";
+      try {
+        style.appendChild(document.createTextNode(css));
+      } catch (ex) {
+        style.styleSheet.cssText = css;
+      }
+      document.getElementsByTagName('head')[0].appendChild(style);
+    }
+
+    function randomColor() {
+      // return "rgb(" + (~~(Math.random() * 255)) + "," + (~~(Math.random() * 255)) + "," + (~~(Math.random() * 255)) + ")";
+      return "#F44336";
+    }
+
+    function addMenuEvent() {
+      var menu = document.getElementById('menu-main-post');
+      if (menu) {
+        var toc = document.getElementById('toc');
+        if (toc) {
+          menu.onclick = function() {
+            if (toc) {
+              if (toc.style.display == 'block') {
+                toc.style.display = 'none';
+              } else {
+                toc.style.display = 'block';
+              }
+            }
+          };
+        } else {
+          menu.style.display = 'none';
+        }
+      }
+    }
+
+  })(window, document);
+</script>
+
+  
+
+
+
+<script type="text/x-mathjax-config">
+    MathJax.Hub.Config({
+        tex2jax: {
+            inlineMath: [ ["$","$"], ["\\(","\\)"] ],
+            skipTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+            processEscapes: true
+        }
+    });
+    MathJax.Hub.Queue(function() {
+        var all = MathJax.Hub.getAllJax();
+        for (var i = 0; i < all.length; ++i)
+            all[i].SourceElement().parentNode.className += ' has-jax';
+    });
+</script>
+<script src="http://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+</body>
+</html>

@@ -1,0 +1,359 @@
+
+<!DOCTYPE html>
+<html lang="en">
+
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#202020"/>
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  <script src="//busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js" async></script>
+  
+  
+    <meta name="keywords" content="Golang," />
+  
+
+  
+    <meta name="description" content="Notes on Golang Memory Allocation" />
+  
+  
+  <link rel="icon" type="image/x-icon" href="/logo.png">
+  <title>Notes on Golang Memory Allocation [ Blog ]</title>
+  
+    <!-- stylesheets list from config.yml -->
+    
+      <link rel="stylesheet" href="//cdn.bootcss.com/pure/1.0.0/pure-min.css">
+    
+      <link rel="stylesheet" href="/css/xoxo.css">
+    
+  
+<meta name="generator" content="Hexo 6.3.0"></head>
+
+
+<body>
+  <div class="nav-container">
+    <nav class="home-menu pure-menu pure-menu-horizontal">
+  <a class="pure-menu-heading" href="/">
+    <img class="avatar" src="https://timesea05.github.io/assets/logo.jpg">
+    <span class="title">Blog</span>
+  </a>
+
+  <ul class="pure-menu-list clearfix">
+      
+          
+            <li class="pure-menu-item"><a href="/" class="pure-menu-link">Home</a></li>
+          
+      
+          
+            <li class="pure-menu-item"><a href="/archives" class="pure-menu-link">Archives</a></li>
+          
+      
+          
+            <li class="pure-menu-item"><a href="/categories" class="pure-menu-link">Categories</a></li>
+          
+      
+          
+            <li class="pure-menu-item"><a href="/tags" class="pure-menu-link">Tags</a></li>
+          
+      
+          
+            <li class="pure-menu-item"><a href="/about" class="pure-menu-link">About</a></li>
+          
+      
+          
+            <li class="pure-menu-item"><a href="/atom.xml" class="pure-menu-link">RSS</a></li>
+          
+      
+  </ul>
+   
+</nav>
+  </div>
+
+  <div class="container" id="content-outer">
+    <div class="inner" id="content-inner">
+      <div class="post-container">
+  <article class="post" id="post">
+    <header class="post-header text-center">
+      <h1 class="title">
+        Notes on Golang Memory Allocation
+      </h1>
+      <span>
+        
+        <time class="time" datetime="2023-08-06T00:00:00.000Z">
+        2023-08-06
+      </time>
+        
+      </span>
+      <span class="slash">/</span>
+      <span class="post-meta">
+      <span class="post-tags">
+        <ul class="article-tag-list" itemprop="keywords"><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/Golang/" rel="tag">Golang</a></li></ul>
+      </span>
+    </span>
+
+    </header>
+
+    <div class="post-content">
+      <p>本文是<a target="_blank" rel="noopener" href="https://draveness.me/golang/docs/part3-runtime/ch07-memory/golang-memory-allocator/">《Go语言设计与实现》7.1节</a>的学习笔记，是对该节内容的注解和扩展。</p>
+<h2 id="golang-内存分配原理-总结">1. Golang 内存分配原理 总结</h2>
+<p>Golang采用多级内存管理组件来管理堆内存，内存分配的基本单位为<code>mspan</code>。</p>
+<ul>
+<li>最底层为<code>mcache</code>，对应每一个内核线程(CPU)，申请小对象时，首先尝试<code>mcache</code>中分配内存</li>
+<li><code>mcache</code>之上为<code>mcentral</code>，当<code>mcache</code>中的内存容量无法满足用户程序的需要时，<code>mcache</code>便会尝试向<code>mcentral</code>中申请内存</li>
+<li><code>mcentral</code>之上为<code>mheap</code>，管理整个堆。<code>mheap</code>使用了许多<code>heapArena</code>对象对内存进行管理，每个<code>heapArena</code>管理固定大小的内存(Linux: 64MB)。若当前已有的<code>heapArena</code>对象占有的内存无法满足用户程序的需要，runtime会创建新的<code>heapArena</code>对象</li>
+</ul>
+<p>用户程序使用<code>make</code>或者<code>new</code>申请内存的操作最终都会被转换为对运行时函数<code>runtime.mallocgc</code>的调用。该函数根据申请内存的大小，将请求分为三类：</p>
+<ul>
+<li>微对象(小于16字节)，使用<code>mcache</code>的微内存分配器进行管理</li>
+<li>小对象(16字节-32768字节)，从<code>mcache</code>或者<code>mcentral</code>中获取内存</li>
+<li>大对象(大于32KB)，直接调用<code>runtime.mcache.allocLarge</code>，计算分配对象需要的页数，根据页数直接在堆上分配内存</li>
+</ul>
+<h2 id="注解与补充">2. 注解与补充</h2>
+<h3 id="跨度类">2.1 跨度类</h3>
+<p>原文链接：<a target="_blank" rel="noopener" href="https://draveness.me/golang/docs/part3-runtime/ch07-memory/golang-memory-allocator/#%e8%b7%a8%e5%ba%a6%e7%b1%bb">7.1.2-内存管理单元-跨度类</a></p>
+<p>跨度类决定内存管理单元中存储的对象大小和个数。文中提到Go语言的内存管理模块中一共包含67种跨度类，所有的数据都已经被预先计算好并存储在了<code>runtime.class_to_size</code>和<code>runtime.class_to_allocnpages</code>变量中：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">const</span> (</span><br><span class="line">	_MaxSmallSize   = <span class="number">32768</span></span><br><span class="line">	smallSizeDiv    = <span class="number">8</span></span><br><span class="line">	smallSizeMax    = <span class="number">1024</span></span><br><span class="line">	largeSizeDiv    = <span class="number">128</span></span><br><span class="line">	_NumSizeClasses = <span class="number">68</span></span><br><span class="line">	_PageShift      = <span class="number">13</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="keyword">var</span> class_to_size = [_NumSizeClasses]<span class="type">uint16</span>&#123;<span class="number">0</span>, <span class="number">8</span>, <span class="number">16</span>, <span class="number">24</span>, <span class="number">32</span>, <span class="number">48</span>, <span class="number">64</span>, <span class="number">80.</span>..&#125;</span><br><span class="line"><span class="keyword">var</span> class_to_allocnpages = [_NumSizeClasses]<span class="type">uint8</span>&#123;<span class="number">0</span>, <span class="number">1</span>, <span class="number">1</span>, <span class="number">1</span>, <span class="number">1</span>, <span class="number">1</span>, <span class="number">1</span>, <span class="number">1.</span>..&#125;</span><br></pre></td></tr></table></figure>
+<p>从源代码中可以看出，<code>runtime.class_to_size</code>和<code>runtime.class_to_allocnpages</code>是全局数组，大小为<code>_NumSizeClasses = 68</code>。后文中提到每一个<code>runtime.mcache</code>结构体(线程缓存)都持有68 * 2个<code>runtime.span</code>，与跨度类的数量不符，这是为何？</p>
+<p><code>runtime.class_to_size</code>和<code>runtime.class_to_allocnpages</code>变量除了存储67个跨度类(1-67)之外，还包含了ID为0的跨度类，它用来管理大于32KB的特殊对象。67+1 =&gt; 68.</p>
+<h3 id="systemstack">2.2 systemstack</h3>
+<p>原文链接：<a target="_blank" rel="noopener" href="https://draveness.me/golang/docs/part3-runtime/ch07-memory/golang-memory-allocator/#%e5%88%9d%e5%a7%8b%e5%8c%96">7.1.2-线程缓存-初始化</a></p>
+<p>函数<code>runtime.allocmcache</code>函数代码如下：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">allocmcache</span><span class="params">()</span></span> *mcache &#123;</span><br><span class="line">	<span class="keyword">var</span> c *mcache</span><br><span class="line">	systemstack(<span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">		lock(&amp;mheap_.lock)</span><br><span class="line">		c = (*mcache)(mheap_.cachealloc.alloc())</span><br><span class="line">		c.flushGen = mheap_.sweepgen</span><br><span class="line">		unlock(&amp;mheap_.lock)</span><br><span class="line">	&#125;)</span><br><span class="line">	<span class="keyword">for</span> i := <span class="keyword">range</span> c.alloc &#123;</span><br><span class="line">		c.alloc[i] = &amp;emptymspan</span><br><span class="line">	&#125;</span><br><span class="line">	c.nextSample = nextSample()</span><br><span class="line">	<span class="keyword">return</span> c</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>函数体中调用了函数<code>runtime.systemstack</code>，为什么要调用这个函数呢，这个函数到底起了什么作用？</p>
+<p>首先看一下Golang官方给出的解释：</p>
+<blockquote>
+<p>Runtime code often temporarily switches to the system stack using <code>systemstack</code>, <code>mcall</code>, or <code>asmcgocall</code> to perform tasks that must not be preempted, that must not grow the user stack, or that switch user goroutines. Code running on the system stack is implicitly non-preemptible and the garbage collector does not scan system stacks. While running on the system stack, the current user stack is not used for execution.</p>
+</blockquote>
+<p>golang runtime 在执行过程中，遇到一些任务，这些任务在执行过程中不能被其他goroutine抢占，不能被切换，因此这些任务就要运行在system stack之上，而不是goroutine的small stack(通常只有4KB)上。</p>
+<p>这个system stack究竟是什么？system stack这个名字，会误认为它是由操作系统维护的内核栈，如果是这样的话，那么传给<code>runtime.systemstack</code>的golang函数就要在内核态执行，显然是不太合理的。这个system stack，是OS为每一个线程创建的栈，其实就是用户栈的一部分。ChatGPT是这样解释的：</p>
+<blockquote>
+<p>The term "system stack" in Go is not referring to a separate stack maintained by the operating system. Instead, it refers to a specific region of the user stack that is reserved for executing certain critical operations within the Go runtime. These critical operations include system calls, memory allocation, garbage collection, and other low-level tasks that need to bypass the normal Go user stack.</p>
+<p>In other words, the "system stack" is still part of the user stack, but it is used for specific purposes within the Go runtime and is not accessible to the user code directly.</p>
+</blockquote>
+<p>除了runtime的一些任务，还有一些任务是需要跑在system stack上的，比如goroutine栈的拷贝。goroutine运行在一个比较小的栈上，在执行go函数执行，系统都会检查栈空间是否还足够，如果不够，就会分配一个更大的栈，并将现有的栈内容复制到新栈之上。但是复制栈的代码显然不能运行在已经用尽空间的栈上，所以只能是system stack。此外，某些垃圾回收的任务也是在系统栈上运行的。</p>
+<h3 id="中心缓存">2.3 中心缓存</h3>
+<p>原文链接：<a target="_blank" rel="noopener" href="https://draveness.me/golang/docs/part3-runtime/ch07-memory/golang-memory-allocator/#%e4%b8%ad%e5%bf%83%e7%bc%93%e5%ad%98">7.1.2-中心缓存</a></p>
+<p><code>runtime.mcentral</code>是内存分配器的中心缓存，与线程缓存不同，访问中心缓存的内存管理单元需要使用互斥锁：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> mcentral <span class="keyword">struct</span> &#123;</span><br><span class="line">	spanclass spanClass</span><br><span class="line">	partial  [<span class="number">2</span>]spanSet</span><br><span class="line">	full     [<span class="number">2</span>]spanSet</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>A <code>spanSet</code> is a data structure that holds a collection of memory spans. It is used to organize and manage memory spans of a specific size class.</p>
+<p><code>partial</code>: This set contains memory spans that have some free memory blocks available for allocation. In other words, these spans are not fully used.</p>
+<p><code>full</code>: This set contains memory spans that have all their memory blocks allocated and are fully used. In other words, there is no free space available in these spans.</p>
+<p>这里<code>partial</code>和<code>full</code>都使用数组类型，这种技巧被称为"double buffering"，可以是加锁解锁的开销降到最低，大幅度提升内存分配性能。ChatGPT给出的解释如下：</p>
+<blockquote>
+<p>The use of two elements in the array is an optimization technique known as "double buffering." It allows the allocator to quickly switch between two sets of partial spans without locking or contention, making the allocation process more efficient.</p>
+<p>The Go runtime uses "double buffering" to manage partial spans efficiently. While one set of partial spans is being actively used for allocations, the other set can be prepared in the background, and once it is ready, the roles of the two sets are swapped. This minimizes contention and allows for fast memory allocations.</p>
+</blockquote>
+<p>线程缓存会通过中心缓存的方法<code>runtime.mcentral.cacheSpan</code>方法来获取新的内存管理单元。原文中对该方法实现的描述如下：</p>
+<ol type="1">
+<li>调用 <code>runtime.mcentral.partialSwept</code> 从清理过的、包含空闲空间的 <code>runtime.spanSet</code> 结构中查找可以使用的内存管理单元；</li>
+<li>调用 <code>runtime.mcentral.partialUnswept</code> 从未被清理过的、包含空闲空间的 <code>runtime.spanSet</code> 结构中查找可以使用的内存管理单元；</li>
+<li>调用 <code>runtime.mcentral.fullUnswept</code> 获取未被清理的、不包含空闲空间的 <code>runtime.spanSet</code>中获取内存管理单元并通过 <code>runtime.mspan.sweep</code> 清理它的内存空间；</li>
+<li>调用 <code>runtime.mcentral.grow</code> 从堆中申请新的内存管理单元；</li>
+<li>更新内存管理单元的 <code>allocCache</code> 等字段帮助快速分配内存；</li>
+</ol>
+<p>当时看这一段的时候感觉非常迷惑，后来才明白，这里的sweep(清理)的等同于garbage collection(垃圾回收)。</p>
+
+    </div>
+
+  </article>
+  <div class="toc-container">
+    
+  <div id="toc" class="toc-article">
+    <strong class="toc-title">Posts</strong>
+    <ol class="toc"><li class="toc-item toc-level-2"><a class="toc-link" href="#golang-%E5%86%85%E5%AD%98%E5%88%86%E9%85%8D%E5%8E%9F%E7%90%86-%E6%80%BB%E7%BB%93"><span class="toc-text">1. Golang 内存分配原理 总结</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E6%B3%A8%E8%A7%A3%E4%B8%8E%E8%A1%A5%E5%85%85"><span class="toc-text">2. 注解与补充</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E8%B7%A8%E5%BA%A6%E7%B1%BB"><span class="toc-text">2.1 跨度类</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#systemstack"><span class="toc-text">2.2 systemstack</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E4%B8%AD%E5%BF%83%E7%BC%93%E5%AD%98"><span class="toc-text">2.3 中心缓存</span></a></li></ol></li></ol>
+  </div>
+
+
+  </div>
+</div>
+<div class="copyright">
+    <span>本作品采用</span>
+    <a target="_blank" rel="noopener" href="https://creativecommons.org/licenses/by/4.0/">知识共享署名 4.0 国际许可协议</a>
+    <span>进行许可。 转载时请注明原文链接。</span>
+</div>
+  
+    <div class="post-nav">
+      <div class="post-nav-item post-nav-next">
+        
+          <span>〈 </span>
+          <a href="/golang/go-struct-data-layout.html" rel="next" title="Data Layout of Go Struct">
+          Data Layout of Go Struct
+          </a>
+        
+      </div>
+  
+      <div class="post-nav-item post-nav-prev">
+          
+          <a href="/golang/notes-on-golang-goroutine-scheduling.html" rel="prev" title="Notes on Golang Goroutine Scheduling">
+            Notes on Golang Goroutine Scheduling
+          </a>
+          <span>〉</span>
+        
+      </div>
+    </div>
+  
+
+
+    </div>
+
+    
+
+  </div>
+  <footer class="footer text-center">
+    <div id="bottom-inner">
+        <a class="bottom-item" href="https://timesea05.github.io">首页</a> |
+        <a class="bottom-item" href="https://timesea05.github.io" target="_blank">主站</a> |
+        <a class="bottom-item" href="https://github.com/TimeSea05" target="_blank">GitHub</a> |
+        <a class="bottom-item" href="https://hexo.io" target="_blank">Powered by hexo</a> |
+        <a class="bottom-item" href="https://github.com/KevinOfNeu/hexo-theme-xoxo" target="_blank">Theme xoxo</a>
+    </div>
+</footer>
+  
+
+<script>
+  (function(window, document, undefined) {
+
+    var timer = null;
+
+    function returnTop() {
+      cancelAnimationFrame(timer);
+      timer = requestAnimationFrame(function fn() {
+        var oTop = document.body.scrollTop || document.documentElement.scrollTop;
+        if (oTop > 0) {
+          document.body.scrollTop = document.documentElement.scrollTop = oTop - 50;
+          timer = requestAnimationFrame(fn);
+        } else {
+          cancelAnimationFrame(timer);
+        }
+      });
+    }
+
+    var hearts = [];
+    window.requestAnimationFrame = (function() {
+      return window.requestAnimationFrame ||
+        window.webkitRequestAnimationFrame ||
+        window.mozRequestAnimationFrame ||
+        window.oRequestAnimationFrame ||
+        window.msRequestAnimationFrame ||
+        function(callback) {
+          setTimeout(callback, 1000 / 60);
+        }
+    })();
+    init();
+
+    function init() {
+      css(".heart{z-index:9999;width: 10px;height: 10px;position: fixed;background: #f00;transform: rotate(45deg);-webkit-transform: rotate(45deg);-moz-transform: rotate(45deg);}.heart:after,.heart:before{content: '';width: inherit;height: inherit;background: inherit;border-radius: 50%;-webkit-border-radius: 50%;-moz-border-radius: 50%;position: absolute;}.heart:after{top: -5px;}.heart:before{left: -5px;}");
+      attachEvent();
+      gameloop();
+      addMenuEvent();
+    }
+
+    function gameloop() {
+      for (var i = 0; i < hearts.length; i++) {
+        if (hearts[i].alpha <= 0) {
+          document.body.removeChild(hearts[i].el);
+          hearts.splice(i, 1);
+          continue;
+        }
+        hearts[i].y--;
+        hearts[i].scale += 0.004;
+        hearts[i].alpha -= 0.013;
+        hearts[i].el.style.cssText = "left:" + hearts[i].x + "px;top:" + hearts[i].y + "px;opacity:" + hearts[i].alpha + ";transform:scale(" + hearts[i].scale + "," + hearts[i].scale + ") rotate(45deg);background:" + hearts[i].color;
+      }
+      requestAnimationFrame(gameloop);
+    }
+
+    /**
+     * 给logo设置点击事件
+     * 
+     * - 回到顶部
+     * - 出现爱心
+     */
+    function attachEvent() {
+      var old = typeof window.onclick === "function" && window.onclick;
+      var logo = document.getElementById("logo");
+      if (logo) {
+        logo.onclick = function(event) {
+          returnTop();
+          old && old();
+          createHeart(event);
+        }
+      }
+      
+    }
+
+    function createHeart(event) {
+      var d = document.createElement("div");
+      d.className = "heart";
+      hearts.push({
+        el: d,
+        x: event.clientX - 5,
+        y: event.clientY - 5,
+        scale: 1,
+        alpha: 1,
+        color: randomColor()
+      });
+      document.body.appendChild(d);
+    }
+
+    function css(css) {
+      var style = document.createElement("style");
+      style.type = "text/css";
+      try {
+        style.appendChild(document.createTextNode(css));
+      } catch (ex) {
+        style.styleSheet.cssText = css;
+      }
+      document.getElementsByTagName('head')[0].appendChild(style);
+    }
+
+    function randomColor() {
+      // return "rgb(" + (~~(Math.random() * 255)) + "," + (~~(Math.random() * 255)) + "," + (~~(Math.random() * 255)) + ")";
+      return "#F44336";
+    }
+
+    function addMenuEvent() {
+      var menu = document.getElementById('menu-main-post');
+      if (menu) {
+        var toc = document.getElementById('toc');
+        if (toc) {
+          menu.onclick = function() {
+            if (toc) {
+              if (toc.style.display == 'block') {
+                toc.style.display = 'none';
+              } else {
+                toc.style.display = 'block';
+              }
+            }
+          };
+        } else {
+          menu.style.display = 'none';
+        }
+      }
+    }
+
+  })(window, document);
+</script>
+
+  
+
+
+
+<script type="text/x-mathjax-config">
+    MathJax.Hub.Config({
+        tex2jax: {
+            inlineMath: [ ["$","$"], ["\\(","\\)"] ],
+            skipTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+            processEscapes: true
+        }
+    });
+    MathJax.Hub.Queue(function() {
+        var all = MathJax.Hub.getAllJax();
+        for (var i = 0; i < all.length; ++i)
+            all[i].SourceElement().parentNode.className += ' has-jax';
+    });
+</script>
+<script src="http://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+</body>
+</html>
